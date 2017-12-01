@@ -4,7 +4,7 @@
 		module="rho-build"
 		revision="0.1-SNAPSHOT"
 		status="integration"
-		publication="20171116180715"
+		publication="20171130011431"
 		e:sbtVersion="0.13" e:scalaVersion="2.10"
 	>
 		<description>

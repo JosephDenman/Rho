@@ -4,7 +4,7 @@
 		module="rho$sources_2.12"
 		revision="0.1"
 		status="integration"
-		publication="20171116175852"
+		publication="20171130123951"
 	/>
 	<configurations>
 		<conf name="compile" visibility="public" description=""/>
