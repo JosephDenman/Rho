@@ -30,11 +30,11 @@ import scala.collection.immutable.Map
     implicit def productLattice[A, B](implicit l1: Lattice[A], l2: Lattice[B]): Lattice[(A, B)] = {
 
       new Lattice[(A, B)] {
-        val bot: (Any, Any) = (bot, bot)
-        val top: (Any, Any) = (top, top)
-        val rel: ((A, B), (A, B)) => Boolean = (a: (A, B), b: (A, B)) => l1.rel(a._1, a._2) && l2.rel(b._1, b._2)
-        val join: ((A, B), (A, B)) => (A, B) = (a: (A, B), b: (A, B)) => (l1.join(a._1, a._2), l2.join(b._1, b._2))
-        val meet: ((A, B), (A, B)) => (A, B) = (a: (A, B), b: (A, B)) => (l1.meet(a._1, a._2), l2.meet(b._1, b._2))
+        val bot: (A, B) = (l1.bot, l2.bot)
+        val top: (A, B) = (l1.top, l2.top)
+        val rel: ((A, B), (A, B)) => Boolean = (a: (A, B), b: (A, B)) => l1.rel(a._1, b._1) && l2.rel(a._2, b._2)
+        val join: ((A, B), (A, B)) => (A, B) = (a: (A, B), b: (A, B)) => (l1.join(a._1, b._1), l2.join(a._2, b._2))
+        val meet: ((A, B), (A, B)) => (A, B) = (a: (A, B), b: (A, B)) => (l1.meet(a._1, b._1), l2.meet(a._2, b._2))
       }
     }
 
@@ -42,7 +42,7 @@ import scala.collection.immutable.Map
 
       new Lattice[Set[S]] {
         val bot: Set[S] = Set.empty[S]
-        val top: Set[S] = System.out.println("error")
+        val top: Set[S] = sys.error("Set has no top")
         val rel: (Set[S], Set[S]) => Boolean = (a: Set[S], b: Set[S]) => a subsetOf b
         val join: (Set[S], Set[S]) => Set[S] = (a: Set[S], b: Set[S]) => a union b
         val meet: (Set[S], Set[S]) => Set[S] = (a: Set[S], b: Set[S]) => a intersect b
@@ -53,7 +53,7 @@ import scala.collection.immutable.Map
 
       new Lattice[Map[K, V]] {
         val bot: Map[K, V] = Map.empty
-        val top: Map[K, V] = System.out.println("error")
+        val top: Map[K, V] = sys.error("Map has no top")
         val rel: (Map[K, V], Map[K, V]) => Boolean = (f: Map[K, V], g: Map[K, V]) => f.isSubmapOfBy(g)(l.rel)
         val join: (Map[K, V], Map[K, V]) => Map[K, V] = (f: Map[K, V], g: Map[K, V]) => f.unionWith(g)(l.join)
         val meet: (Map[K, V], Map[K, V]) => Map[K, V] = (f: Map[K, V], g: Map[K, V]) => f.intersectionWith(g)(l.meet)
@@ -61,11 +61,23 @@ import scala.collection.immutable.Map
     }
 
 
-    implicit def ⊎[K,V](m: Map[K,V], xs: List[(K,V)])(implicit o: Order[K], l: Lattice[V])
+    implicit def ⊎[K,V](m: Map[K,V], xs: List[(K,V)])(implicit o: Order[K], l: Lattice[V]): Map[K,V] = {
+      xs match {
+        case Nil => m
+        case (k,v)::tl => ⊎(m, tl).insertWith (k, v, l.join)
+      }
+    }
 
-    implicit def ⨆[K, V](m: Map[K, V], xs: List[(K, V)])(implicit o: Order[K], l: Lattice[V]): Map[K, V]
+    implicit def ⨆[K, V](m: Map[K, V], xs: List[(K, V)])(implicit o: Order[K], l: Lattice[V]): Map[K, V] = {
+      xs match {
+        case Nil => m
+        case (k,v)::tl => ⨆(m, tl).insertWith (k, v, l.join)
+      }
+    }
 
-    implicit def !![K, V](m: Map[K, V])(implicit o: Order[K], l: Lattice[V]): K => V
+    implicit def !![K, V](m: Map[K, V])(implicit o: Order[K], l: Lattice[V]): K => V = {
+      (k: K) => m getOrElse (k,l.bot)
+    }
 
 
 
