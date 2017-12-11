@@ -3,23 +3,61 @@ package AbstractInterpreter
 import AbstractInterpreter.Lattice._
 import scala.collection.immutable.HashMap
 
-  sealed trait StoreLike[A]{
+// object StoreLike{
+//   type Data[A] = String
+//   type Store[A] = HashMap[A,Data[A]]
 
-    type Data[Address] = String
+//   val simpleApply: Store[A] = new HashMap[A, Data[A]]
+//   val simpleBind: (Store[A], A, Data[A]) => Store[A]
+//   = (store: Store[A], address: A, data: Data[A]) => ⨆[A, Data[A]](store, List(address -> data))
+//   val simpleRead: (Store[A], A) => Option[Data[A]]
+//   = (store: Store[A], address: A) => Some(!![A, Data[A]](store).apply(address))
+//   val simpleWrite: (Store[A], A, Data[A]) => Store[A]
+//   = (store: Store[A], address: A, data: Data[A]) => ⨆[A, Data[A]](store, List(address -> data))
+//   val simpleFilterStore: (Store[A], A => Boolean) => Store[A]
+//   = (store: Store[A], pre: A => Boolean) => store.filterKeys(pre).asInstanceOf[HashMap[A, Data[A]]]
 
-    type Store[Address] = HashMap[A,Data[Address]]
+//   val smartApply: Store[A] = new HashMap[A, Data[A]]
 
-    val init: Store[A]
+//   val smartBind: (Store[A], A, Data[A]) => Store[A]
+//     = (store: Store[A], address: A, data: Data[A]) => {
+//       val item: Option[Data[A]] = store.get(address)
+//       item match {
+//         case None => store + (address -> data)
+//         case Some(prev) => sys.error("reassignment to val")
+//       }
+//     }
 
-    val bind:(Store[A], A, Data[A]) => Store[A]
+//   val smartRead: (Store[A], A) => Option[Data[A]]
+//     = (store: Store[A], address: A) => {
+//     store.get(address)
+//     }
 
-    val write:(Store[A], A, Data[A]) => Store[A]
+//   val smartWrite: (Store[A], A, Data[A]) => Store[A]
+//     = (store: Store[A], address: A, data: Data[A]) => store + (address -> data)
 
-    val read:(Store[A], A) => Option[Data[A]]
+//   val smartFilterStore: (Store[A], A => Boolean) => Store[A]
+//     = (store: Store[A], pre: A => Boolean) => store.filterKeys(pre).asInstanceOf[HashMap[A, Data[A]]]
 
-    val filterStore:(Store[A], A => Boolean) => Store[A]
+// }
 
-  }
+sealed trait StoreLike[A]{
+
+  type Data[A] = String
+
+  type Store[A] = HashMap[A,Data[A]]
+
+  val apply:Store[A]
+
+  val bind:(Store[A], A, Data[A]) => Store[A]
+
+  val write:(Store[A], A, Data[A]) => Store[A]
+
+  val read:(Store[A], A) => Option[Data[A]]
+
+  val filterStore:(Store[A], A => Boolean) => Store[A]
+
+}
 
 /*type Var = String
 
@@ -27,58 +65,58 @@ type Address = String
 
 type Env[A] = HashMap[Var,A] */
 
-  object StoreLike {
+object StoreLike {
 
-    import AbstractInterpreter.Lattice
+  import AbstractInterpreter.Lattice
 
-    implicit def smartStore[A]: StoreLike[A] = {
+  implicit def smartStore[A]: StoreLike[A] = {
 
-      new StoreLike[A] {
+    new StoreLike[A] {
 
-        override val init: Store[A] = new HashMap[A, Data[A]]
+      val apply: Store[A] = new HashMap[A, Data[A]]
 
-        val bind: (Store[A], A, Data[A]) => Store[A]
-        = (store: Store[A], address: A, data: Data[A]) => ⨆[A, Data[A]](store, List(address -> data))
+      val bind: (Store[A], A, Data[A]) => Store[A]
+      = (store: Store[A], address: A, data: Data[A]) => ⨆[A, Data[A]](store, List(address -> data))
 
-        val read: (Store[A], A) => Option[Data[A]]
-        = (store: Store[A], address: A) => Some(!![A, Data[A]](store).apply(address))
+      val read: (Store[A], A) => Option[Data[A]]
+      = (store: Store[A], address: A) => Some(!![A, Data[A]](store).apply(address))
 
-        val write: (Store[A], A, Data[A]) => Store[A]
-        = (store: Store[A], address: A, data: Data[A]) => ⨆[A, Data[A]](store, List(address -> data))
+      val write: (Store[A], A, Data[A]) => Store[A]
+      = (store: Store[A], address: A, data: Data[A]) => ⨆[A, Data[A]](store, List(address -> data))
 
-        val filterStore: (Store[A], A => Boolean) => Store[A]
-        = (store: Store[A], pre: A => Boolean) => store.filterKeys(pre).asInstanceOf[HashMap[A, Data[A]]]
-      }
-    }
-
-    implicit def simpleStore[A]: StoreLike[A] = {
-
-      new StoreLike[A] {
-
-        override val init: Store[A] = new HashMap[A, Data[A]]
-
-        val bind: (Store[A], A, Data[A]) => Store[A]
-          = (store: Store[A], address: A, data: Data[A]) => {
-            val item: Option[Data[A]] = store.get(address)
-            item match {
-              case None => store + (address -> data)
-              case Some(prev) => sys.error("reassignment to val")
-            }
-        }
-
-        val read: (Store[A], A) => Option[Data[A]]
-          = (store: Store[A], address: A) => {
-          store.get(address)
-        }
-
-        val write: (Store[A], A, Data[A]) => Store[A]
-          = (store: Store[A], address: A, data: Data[A]) => store + (address -> data)
-
-        val filterStore: (Store[A], A => Boolean) => Store[A]
-          = (store: Store[A], pre: A => Boolean) => store.filterKeys(pre).asInstanceOf[HashMap[A, Data[A]]]
-      }
+      val filterStore: (Store[A], A => Boolean) => Store[A]
+      = (store: Store[A], pre: A => Boolean) => store.filterKeys(pre).asInstanceOf[HashMap[A, Data[A]]]
     }
   }
+
+  implicit def simpleStore[A]: StoreLike[A] = {
+
+    new StoreLike[A] {
+
+      val apply: Store[A] = new HashMap[A, Data[A]]
+
+      val bind: (Store[A], A, Data[A]) => Store[A]
+        = (store: Store[A], address: A, data: Data[A]) => {
+          val item: Option[Data[A]] = store.get(address)
+          item match {
+            case None => store + (address -> data)
+            case Some(prev) => sys.error("reassignment to val")
+          }
+      }
+
+      val read: (Store[A], A) => Option[Data[A]]
+        = (store: Store[A], address: A) => {
+        store.get(address)
+      }
+
+      val write: (Store[A], A, Data[A]) => Store[A]
+        = (store: Store[A], address: A, data: Data[A]) => store + (address -> data)
+
+      val filterStore: (Store[A], A => Boolean) => Store[A]
+        = (store: Store[A], pre: A => Boolean) => store.filterKeys(pre).asInstanceOf[HashMap[A, Data[A]]]
+    }
+  }
+}
 
 
   /*
