@@ -15,6 +15,16 @@ import scala.collection.immutable.HashMap
 
   object Lattice {
 
+    implicit def stringLattice: Lattice[String] = {
+      new Lattice[String] {
+        val bot: String = "bot"
+        val top: String = "top"
+        val rel: (String, String) => Boolean = (a: String, b: String) => true
+        val join: (String, String) => String = (a: String, b: String) => "top"
+        val meet: (String, String) => String = (a: String, b: String) => "bot"
+      }
+    }
+
     implicit def unitLattice: Lattice[Unit] = {
       new Lattice[Unit] {
         val bot: Unit = Unit

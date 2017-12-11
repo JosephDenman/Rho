@@ -110,8 +110,10 @@ Abstract Interpretation:
 * : N -> P x Env
   - evaluates a reference to retrieve a closure
 
-Env : N -> N
+Env : N -> A
   - the contents of names. For free names, the contents of the channel. For bound names, the value bound to the name.
+
+Store : A -> N
 
 Term:
 0 : 1 -> P

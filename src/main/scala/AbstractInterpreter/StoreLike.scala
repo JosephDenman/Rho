@@ -15,7 +15,7 @@ import scala.collection.immutable.HashMap
 
     val write:(Store[A], A, Data[A]) => Store[A]
 
-    val read:(Store[A], A) => Data[A]
+    val read:(Store[A], A) => Option[Data[A]]
 
     val filterStore:(Store[A], A => Boolean) => Store[A]
 
@@ -40,8 +40,8 @@ type Env[A] = HashMap[Var,A] */
         val bind: (Store[A], A, Data[A]) => Store[A]
         = (store: Store[A], address: A, data: Data[A]) => ⨆[A, Data[A]](store, List(address -> data))
 
-        val read: (Store[A], A) => Data[A]
-        = (store: Store[A], address: A) => !![A, Data[A]](store).apply(address)
+        val read: (Store[A], A) => Option[Data[A]]
+        = (store: Store[A], address: A) => Some(!![A, Data[A]](store).apply(address))
 
         val write: (Store[A], A, Data[A]) => Store[A]
         = (store: Store[A], address: A, data: Data[A]) => ⨆[A, Data[A]](store, List(address -> data))
@@ -66,13 +66,9 @@ type Env[A] = HashMap[Var,A] */
             }
         }
 
-        val read: (Store[A], A) => Data[A]
+        val read: (Store[A], A) => Option[Data[A]]
           = (store: Store[A], address: A) => {
-          val item: Option[Data[A]] = store.get(address)
-          item match {
-            case None => _
-            case Some(prev) => prev
-          }
+          store.get(address)
         }
 
         val write: (Store[A], A, Data[A]) => Store[A]
