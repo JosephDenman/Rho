@@ -28,6 +28,10 @@ case class Par[Name](left: Proc[Name], right: Proc[Name]) extends Proc[Name]
 // *X
 case class Drop[Name](x: Name) extends Proc[Name]
 
+//
+case class Comm[Name](x: Name, q: Proc[Name], kont: Proc[Name])
+
+
 object Proc {
 
   implicit val functorProc: Functor[Proc] = new Functor[Proc]{

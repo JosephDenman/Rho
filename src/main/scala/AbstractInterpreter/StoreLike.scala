@@ -29,30 +29,59 @@ type Env[A] = HashMap[Var,A] */
 
   object StoreLike {
 
-    implicit def simpleStore[A]: StoreLike[A] = {
+    import AbstractInterpreter.Lattice
 
-      import AbstractInterpreter.Lattice
+    implicit def smartStore[A]: StoreLike[A] = {
 
-      new StoreLike[A]{
+      new StoreLike[A] {
 
         override val init: Store[A] = new HashMap[A, Data[A]]
 
         val bind: (Store[A], A, Data[A]) => Store[A]
-          = (store: Store[A], address: A, data: Data[A]) => ⨆[A, Data[A]](store, List(address -> data))
+        = (store: Store[A], address: A, data: Data[A]) => ⨆[A, Data[A]](store, List(address -> data))
 
         val read: (Store[A], A) => Data[A]
-          = (store: Store[A], address: A) => !![A,Data[A]](store).apply(address)
+        = (store: Store[A], address: A) => !![A, Data[A]](store).apply(address)
 
         val write: (Store[A], A, Data[A]) => Store[A]
-          = (store: Store[A], address: A, data: Data[A]) => ⨆[A, Data[A]](store, List(address -> data))
+        = (store: Store[A], address: A, data: Data[A]) => ⨆[A, Data[A]](store, List(address -> data))
+
+        val filterStore: (Store[A], A => Boolean) => Store[A]
+        = (store: Store[A], pre: A => Boolean) => store.filterKeys(pre).asInstanceOf[HashMap[A, Data[A]]]
+      }
+    }
+
+    implicit def simpleStore[A]: StoreLike[A] = {
+
+      new StoreLike[A] {
+
+        override val init: Store[A] = new HashMap[A, Data[A]]
+
+        val bind: (Store[A], A, Data[A]) => Store[A]
+          = (store: Store[A], address: A, data: Data[A]) => {
+            val item: Option[Data[A]] = store.get(address)
+            item match {
+              case None => store + (address -> data)
+              case Some(prev) => sys.error("reassignment to val")
+            }
+        }
+
+        val read: (Store[A], A) => Data[A]
+          = (store: Store[A], address: A) => {
+          val item: Option[Data[A]] = store.get(address)
+          item match {
+            case None => _
+            case Some(prev) => prev
+          }
+        }
+
+        val write: (Store[A], A, Data[A]) => Store[A]
+          = (store: Store[A], address: A, data: Data[A]) => store + (address -> data)
 
         val filterStore: (Store[A], A => Boolean) => Store[A]
           = (store: Store[A], pre: A => Boolean) => store.filterKeys(pre).asInstanceOf[HashMap[A, Data[A]]]
-
       }
-
     }
-
   }
 
 

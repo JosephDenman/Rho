@@ -73,8 +73,12 @@ import scala.collection.immutable.HashMap
       (k: K) => m getOrElse (k,l.bot)
     }
 
-
-
+    implicit def /[K,V](m: HashMap[K,V], xs: List[(K,V)]): HashMap[K,V] = {
+      for( (k,v) <- xs){
+        m + (k -> v)
+      }
+      m
+    }
 
     implicit class HashMapTheory[K, A](private val m1: HashMap[K, A]) {
 
