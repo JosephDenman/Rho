@@ -1,3 +1,5 @@
+package ADT
+
 import cats.Applicative
 import cats.Eval
 import cats.Functor
@@ -9,7 +11,6 @@ import cats.Traverse
 sealed trait Proc[Name]
 
 // X := X[P[X]]
-
 case class Rho(proc: Proc[Rho])
 
 // 0
@@ -49,6 +50,7 @@ object Proc {
         case Output(x,p) => f(foldLeft(p,b)(f),x)
         case Par(proc1,proc2) => foldLeft(proc2,foldLeft(proc1,b)(f))(f)
       }
+
     def foldRight[A, B](proc: Proc[A],lb: Eval[B])(f: (A, Eval[B]) => Eval[B]): Eval[B] =
       proc match {
         case Zero() => lb
@@ -60,6 +62,7 @@ object Proc {
   }
 
   implicit val traversableProc: Traverse[Proc] = new Traverse[Proc]{
+
     def traverse[G[_], A, B](proc: Proc[A])(func: A => G[B])(implicit ap: Applicative[G]): G[Proc[B]] =
       proc match {
         case Zero() => ap.pure(Zero[B]())
@@ -68,8 +71,10 @@ object Proc {
         case Output(x,p) => ap.map2(func(x), traverse(p)(func))(Output[B])
         case Par(proc1,proc2) => ap.map2(traverse(proc1)(func), traverse(proc2)(func))(Par[B])
       }
+
     def foldLeft[A, B](proc: Proc[A],b: B)(f: (B, A) => B): B =
       foldableProc.foldLeft(proc,b)(f)
+
     def foldRight[A, B](proc: Proc[A],lb: Eval[B])(f: (A, Eval[B]) => Eval[B]): Eval[B] =
       foldableProc.foldRight(proc,lb)(f)
   }
@@ -89,8 +94,22 @@ object Proc {
   }
 }
 
+
+
 /*
 
+Abstract Interpretation:
+
+@ : P x Env -> N
+  - takes a closure and returns a reference to that closure, i.e., a name.
+
+* : N -> P x Env
+  - evaluates a reference to retrieve a closure
+
+Env : N -> N
+  - the contents of names. For free names, the contents of the channel. For bound names, the value bound to the name.
+
+Term:
 0 : 1 -> P
 ! : N x P -> P
 for : N x P -> P
@@ -102,4 +121,5 @@ COMM : 1 -> P
 */
 
 // Grammar for Rho with Concrete State Space //
+
 
