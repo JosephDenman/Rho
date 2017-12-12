@@ -12,11 +12,11 @@ sealed trait EnvironmentLike[A]{
 
     type Store = HashMap[A,Data]
 
-    def apply : Environment
+    val apply: Environment
 
-    def write : (StoreLike[A], Environment, Rho, Data) => Environment
+    val write: (StoreLike[A], Environment, Rho, Data) => Environment
 
-    def read : (StoreLike[A], Environment, Rho) => Option[Data]
+    val read: (StoreLike[A], Environment, Rho) => Option[Data]
 }
 
 // introduce implicit parameter environment or environmentLike //
@@ -27,7 +27,7 @@ object EnvironmentLike {
 
       new EnvironmentLike[A] {
 
-        def apply: Environment = new HashMap[Rho,A]
+        val apply: Environment = new HashMap[Rho,A]
 
         val write: (StoreLike[A], Environment, Rho, Data) => Environment = {
           (storeLike, env, proc, data) => {
