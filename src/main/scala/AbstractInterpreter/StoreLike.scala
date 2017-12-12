@@ -1,5 +1,6 @@
 package AbstractInterpreter
 
+import AbstractInterpreter.Aliases.{Data, Store}
 import AbstractInterpreter.Lattice._
 
 import scala.collection.immutable.HashMap
@@ -44,64 +45,70 @@ import scala.collection.immutable.HashMap
 
 sealed trait StoreLike[A]{
 
-  type Data[A] = String
+  private val store: Store[A] = new HashMap[A,Data[A]]
 
-  type Store = HashMap[A, Data[A]]
+  val getStore: Store[A] = store
 
-  private val globalStore: Store = new HashMap[A,Data[A]]
+  val bind: A => Data[A] => Store[A]
 
-  val getStore: Store = globalStore
-
-  val bind:(A, Data[A]) => Store
-
-  val write:(A, Data[A]) => Store
+  val write: A => Data[A] => Store[A]
 
   val read: A => Option[Data[A]]
 
-  val filterStore:(A => Boolean) => Store
+  val filterStore:(A => Boolean) => Store[A]
 
 }
 
 object StoreLike {
 
-  implicit def smartStore[A]: StoreLike[A] = {
+  implicit def abstractStore[A]: StoreLike[A] = {
 
     new StoreLike[A] {
 
-      val bind: (A, Data[A]) => Store
-        = (address: A, data: Data[A]) => ⨆[A, Data[A]](getStore, List(address -> data))
+      /*
+        "Joining(⨆) on the abstract store allows each address
+        in the finite set of abstract addresses to represent
+        multiple concrete addresses....the abstract allocator
+        distinguishes between bindings of the same variable in
+        different contexts. It determines how many abstract
+        variants are associated with the variable."
+      */
+
+      val bind: A => Data[A] => Store[A]
+        = address => data => ⨆[A, Data[A]](getStore, List(address -> data))
 
       val read: A => Option[Data[A]]
-        = (address: A) => Some(!![A, Data[A]](getStore).apply(address))
+        = address => Some(!![A, Data[A]](getStore).apply(address))
 
-      val write: (A, Data[A]) => Store
-        = (address: A, data: Data[A]) => ⨆[A, Data[A]](getStore, List(address -> data))
+      val write: A => Data[A] => Store[A]
+        = address => data => ⨆[A, Data[A]](getStore, List(address -> data))
 
-      val filterStore: (A => Boolean) => Store
-        = (pre: A => Boolean) => getStore.filterKeys(pre).asInstanceOf[HashMap[A, Data[A]]]
+      val filterStore: (A => Boolean) => Store[A]
+        = pre => getStore.filterKeys(pre).asInstanceOf[HashMap[A, Data[A]]]
     }
   }
 
-  implicit def simpleStore[A]: StoreLike[A] = {
+  implicit def concreteStore[A]: StoreLike[A] = {
 
     new StoreLike[A] {
-      val bind: (A, Data[A]) => HashMap[A, Data[A]]
-        = (address: A, data: Data[A]) => {
-          val item: Option[Data[A]] = read(address)
-          item match {
-            case None => getStore + (address -> data)
-            case Some(prev) => sys.error(s"variable already bound to $prev")
-          }
+
+      val bind: A => Data[A] => Store[A] = {
+        address => data =>
+            val item = read(address)
+            item match {
+              case None => getStore + (address -> data)
+              case Some(prev) => sys.error(s"variable already bound to $prev")
+            }
       }
 
-      val read: (A) => Option[Data[A]]
-        = (address: A) => getStore.get(address)
+      val read: A => Option[Data[A]]
+        = address => getStore.get(address)
 
-      val write: (A, Data[A]) => Store
-        = (address: A, data: Data[A]) => getStore + (address -> data)
+      val write: A => Data[A] => Store[A]
+        = address => data => getStore + (address -> data)
 
-      val filterStore: (A => Boolean) => Store
-        = (pre: A => Boolean) => getStore.filterKeys(pre).asInstanceOf[HashMap[A, Data[A]]]
+      val filterStore: (A => Boolean) => Store[A]
+        = pre => getStore.filterKeys(pre).asInstanceOf[HashMap[A, Data[A]]]
     }
   }
 }

@@ -1,55 +1,58 @@
 package AbstractInterpreter
 
 import ADT.Rho
+import AbstractInterpreter.Aliases.{Data, Environment}
 
 import scala.collection.immutable.HashMap
 
-sealed trait EnvironmentLike[A]{
+package object Aliases {
 
-    type Data = String
+  type Data[A] = String
 
-    type Environment = HashMap[Rho,A]
+  type Environment[A] = HashMap[Rho,A]
 
-    type Store = HashMap[A,Data]
-
-    val apply: Environment
-
-    val write: (StoreLike[A], Environment, Rho, Data) => Environment
-
-    val read: (StoreLike[A], Environment, Rho) => Option[Data]
+  type Store[A] = HashMap[A,Data[A]]
 }
 
-// introduce implicit parameter environment or environmentLike //
+sealed trait EnvironmentLike[A]{
+
+    val apply: Environment[A] = new HashMap[Rho,A]
+
+    val write: Environment[A] => Rho => Data[A] => Environment[A]
+
+    val read: Environment[A] => Rho => Option[Data[A]]
+}
 
 object EnvironmentLike {
 
-    implicit def simpleEnv[A] : EnvironmentLike[A] = {
+    implicit def simpleEnv[A](implicit store: StoreLike[A]): EnvironmentLike[A] = {
 
       new EnvironmentLike[A] {
 
-        val apply: Environment = new HashMap[Rho,A]
-
-        val write: (StoreLike[A], Environment, Rho, Data) => Environment = {
-          (storeLike, env, proc, data) => {
-            val address = env get proc
-            address match {
-              case None => sys.error(s"No address associated with $proc")
-              case Some(a) => storeLike.write(a, data)
-            }
-          }
+        val write: Environment[A] => Rho => Data[A] => Environment[A] = {
+          env => x => Q => env get x map {store.write(_)(Q)}
             env
         }
 
-        val read: (StoreLike[A], Environment, Rho) => Option[Data] = {
-          (storeLike, env, proc) => {
-            val address = env get proc
-              address match {
-                case None => sys.error(s"No address associated with $proc")
-                case Some(a) => storeLike.read(a)
+        val read: Environment[A] => Rho => Option[Data[A]] = {
+          env => x => {
+            val result = env get x map {store.read(_)}
+              result match {
+                case None => sys.error(s"No data associated with $x") // the case where we store the continuation //
+                case Some(data) => data
               }
           }
         }
-
       }
     }
 }
+
+/*
+
+Read : Env x Chan -> Chan
+
+Bind : Env x Var x Chan -> Env
+
+Input : Env x Kont x Chan x Var -> Env x Kont
+
+ */

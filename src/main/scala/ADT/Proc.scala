@@ -1,13 +1,8 @@
 package ADT
 
-import cats.Applicative
-import cats.Eval
-import cats.Functor
-import cats.Foldable
-import cats.Traverse
+import cats.{Applicative, Eval, Foldable, Functor, Traverse}
 
 // P[X]
-
 sealed trait Proc[Name]
 
 // X := X[P[X]]
