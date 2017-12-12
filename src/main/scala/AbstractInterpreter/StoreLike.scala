@@ -1,6 +1,7 @@
 package AbstractInterpreter
 
 import AbstractInterpreter.Lattice._
+
 import scala.collection.immutable.HashMap
 
 // object StoreLike{
@@ -45,145 +46,62 @@ sealed trait StoreLike[A]{
 
   type Data[A] = String
 
-  type Store[A] = HashMap[A,Data[A]]
+  type Store = HashMap[A, Data[A]]
 
-  val apply:Store[A]
+  private val globalStore: Store = new HashMap[A,Data[A]]
 
-  val bind:(Store[A], A, Data[A]) => Store[A]
+  val getStore: Store = globalStore
 
-  val write:(Store[A], A, Data[A]) => Store[A]
+  val bind:(A, Data[A]) => Store
 
-  val read:(Store[A], A) => Option[Data[A]]
+  val write:(A, Data[A]) => Store
 
-  val filterStore:(Store[A], A => Boolean) => Store[A]
+  val read: A => Option[Data[A]]
+
+  val filterStore:(A => Boolean) => Store
 
 }
 
-/*type Var = String
-
-type Address = String
-
-type Env[A] = HashMap[Var,A] */
-
 object StoreLike {
-
-  import AbstractInterpreter.Lattice
 
   implicit def smartStore[A]: StoreLike[A] = {
 
     new StoreLike[A] {
 
-      val apply: Store[A] = new HashMap[A, Data[A]]
+      val bind: (A, Data[A]) => Store
+        = (address: A, data: Data[A]) => ⨆[A, Data[A]](getStore, List(address -> data))
 
-      val bind: (Store[A], A, Data[A]) => Store[A]
-      = (store: Store[A], address: A, data: Data[A]) => ⨆[A, Data[A]](store, List(address -> data))
+      val read: A => Option[Data[A]]
+        = (address: A) => Some(!![A, Data[A]](getStore).apply(address))
 
-      val read: (Store[A], A) => Option[Data[A]]
-      = (store: Store[A], address: A) => Some(!![A, Data[A]](store).apply(address))
+      val write: (A, Data[A]) => Store
+        = (address: A, data: Data[A]) => ⨆[A, Data[A]](getStore, List(address -> data))
 
-      val write: (Store[A], A, Data[A]) => Store[A]
-      = (store: Store[A], address: A, data: Data[A]) => ⨆[A, Data[A]](store, List(address -> data))
-
-      val filterStore: (Store[A], A => Boolean) => Store[A]
-      = (store: Store[A], pre: A => Boolean) => store.filterKeys(pre).asInstanceOf[HashMap[A, Data[A]]]
+      val filterStore: (A => Boolean) => Store
+        = (pre: A => Boolean) => getStore.filterKeys(pre).asInstanceOf[HashMap[A, Data[A]]]
     }
   }
 
   implicit def simpleStore[A]: StoreLike[A] = {
 
     new StoreLike[A] {
-
-      val apply: Store[A] = new HashMap[A, Data[A]]
-
-      val bind: (Store[A], A, Data[A]) => Store[A]
-        = (store: Store[A], address: A, data: Data[A]) => {
-          val item: Option[Data[A]] = store.get(address)
+      val bind: (A, Data[A]) => HashMap[A, Data[A]]
+        = (address: A, data: Data[A]) => {
+          val item: Option[Data[A]] = read(address)
           item match {
-            case None => store + (address -> data)
-            case Some(prev) => sys.error("reassignment to val")
+            case None => getStore + (address -> data)
+            case Some(prev) => sys.error(s"variable already bound to $prev")
           }
       }
 
-      val read: (Store[A], A) => Option[Data[A]]
-        = (store: Store[A], address: A) => {
-        store.get(address)
-      }
+      val read: (A) => Option[Data[A]]
+        = (address: A) => getStore.get(address)
 
-      val write: (Store[A], A, Data[A]) => Store[A]
-        = (store: Store[A], address: A, data: Data[A]) => store + (address -> data)
+      val write: (A, Data[A]) => Store
+        = (address: A, data: Data[A]) => getStore + (address -> data)
 
-      val filterStore: (Store[A], A => Boolean) => Store[A]
-        = (store: Store[A], pre: A => Boolean) => store.filterKeys(pre).asInstanceOf[HashMap[A, Data[A]]]
+      val filterStore: (A => Boolean) => Store
+        = (pre: A => Boolean) => getStore.filterKeys(pre).asInstanceOf[HashMap[A, Data[A]]]
     }
   }
 }
-
-
-  /*
-
-   Register
-      |
-      V
-   Memory - Address
-      |
-      V
-   Disk Storage - Keccak256 Address
-      |
-      V
-   Network - TCP/IP
-
- */
-
-/*
-  trait Store[A] {
-    val store = new TrieMap[A, Context[A]]()
-    def putStore(key: A, value: Context[A]): Unit = {
-      store.update(key, value)
-    }
-    def getStore(key: A): Option[Context[A]] = {
-      store.get(key)
-    }
-  }
-
-  object Store {
-
-  }
-
-  trait Env[A] {
-    val env: TrieMap[Var, A]
-    def putEnv(key: Var, value: Context[A]): Unit
-    def getEnv(key: Var): Option[Context[A]]
-  }
-
-  class ProcEnv[A] extends Env[A] {
-
-    val env = new TrieMap[Var, A]()
-
-    def putEnv(key: Var, value: Context[A]): Unit = {
-      val intermediate = env.get(key)
-      intermediate match {
-        case None => sys.error("No address associated with variable")
-        case Some(addr) => Store.putStore(addr, value)
-        // putStore(addr, value)
-      }
-    }
-
-    def getEnv(key: Var): Option[Context[A]] = {
-      val intermediate = env.get(key)
-      intermediate match {
-        case None => sys.error("No address associated with variable")
-        case Some(addr) => Store.getStore(addr)
-      }
-    }
-}
-
-
-// * Var -> Address  Address -> Context[Address]
-// @ Context[Address] -> Address   Address -> Var
-
-/* x!(Q) | for( @Q <- x ){ @Q!(P) | for( y <- @Q ){ *y } } */
-
-
-
-
-*/
