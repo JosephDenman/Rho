@@ -81,17 +81,17 @@ object StoreLike2 {
               ⨆[A, Data[A]](store, List(address -> data))
       }
 
+      val write: Store[A] => A => Data[A] => Store[A] = {
+        store =>
+          address =>
+            data =>
+              ⨆[A, Data[A]](store, List(address -> data))
+      }
+
       val read: Store[A] => A => Option[Data[A]] = {
         store =>
           address =>
             Some(!![A, Data[A]](store).apply(address))
-      }
-
-      val write: Store[A] => A => Data[A] => Store[A] = {
-        store =>
-         address =>
-          data =>
-            ⨆[A, Data[A]](store, List(address -> data))
       }
 
       val filter: Store[A] => (A => Boolean) => Store[A] = {
@@ -119,17 +119,17 @@ object StoreLike2 {
               }
       }
 
-      val read: Store[A] => A => Option[Data[A]] = {
-        store =>
-          address =>
-            store.get(address)
-      }
-
       val write: Store[A] => A => Data[A] => Store[A] = {
         store =>
           address =>
             data =>
               store + (address -> data)
+      }
+
+      val read: Store[A] => A => Option[Data[A]] = {
+        store =>
+          address =>
+            store.get(address)
       }
 
       val filter: Store[A] => (A => Boolean) => Store[A] = {
