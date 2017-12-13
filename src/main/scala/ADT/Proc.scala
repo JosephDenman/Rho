@@ -24,7 +24,7 @@ case class Par[Name](left: Proc[Name], right: Proc[Name]) extends Proc[Name]
 case class Drop[Name](x: Name) extends Proc[Name]
 
 //
-case class Comm[Name](x: Name, q: Proc[Name], kont: Proc[Name])
+case class Comm[Name](x: Name, Q: Proc[Name], k: Proc[Name])
 
 
 object Proc {
