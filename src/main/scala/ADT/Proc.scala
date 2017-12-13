@@ -6,7 +6,10 @@ import cats.{Applicative, Eval, Foldable, Functor, Traverse}
 sealed trait Proc[Name]
 
 // X := X[P[X]]
-case class Rho(proc: Proc[Rho])
+case class Rho[F](scope: Scope[Rho[F],F])
+
+
+case class Scope[B,F](proc: Proc[Var[B,Proc[F]]])
 
 // 0
 case class Zero[Name]() extends Proc[Name]
@@ -23,9 +26,37 @@ case class Par[Name](left: Proc[Name], right: Proc[Name]) extends Proc[Name]
 // *X
 case class Drop[Name](x: Name) extends Proc[Name]
 
-//
-case class Comm[Name](x: Name, Q: Proc[Name], k: Proc[Name])
 
+sealed trait Var[B,F]
+
+case class Bound[B,F](bound: B) extends Var[B,F]
+
+case class Free[B,F](free: F) extends Var[B,F]
+
+
+//case class Comm[Name](x: Name, Q: Proc[Name], k: Proc[Name])
+
+object Example {
+
+  val x = Rho(Scope(Zero()))
+
+  val Q = Par(Zero(),Zero())
+
+  val output = Output(x,Q)
+
+  val z = Rho(Scope(Free[String,Rho[String]]("z"))
+
+  val input = Input(z, x, Zero())
+
+  val par = Par(output, input)
+
+  val drop = z.proc
+
+  // @0!(0) | for( @0 <- @0 ){ 0 } -> 0{@0/@0}
+  // x!Q | for( z <- x ){ P } -> P{@Q/z}
+  //
+
+}
 
 object Proc {
 
