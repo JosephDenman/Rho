@@ -21,7 +21,7 @@ sealed trait EnvironmentLike[A,S,D]{
 
   val apply: Env[A] = new HashMap[Rho,A]
 
-  // val bind: Store[A] => Env[A] => Rho => D => (Env[A], Store[A])
+  val bind: S => Env[A] => Rho => D => (Env[A], S)
 
   val write: S => Env[A] => Rho => D => (Env[A], S)
 
@@ -36,6 +36,14 @@ object EnvironmentLike {
   implicit def simpleEnv[A](implicit storeLike: StoreLike[A, Store[A],Data[A]]): EnvironmentLike[A,Store[A],Data[A]] = {
 
     new EnvironmentLike[A,Store[A],Data[A]] {
+
+      val bind: Store[A] => Env[A] => Rho => Data[A] => (Env[A], Store[A]) = {
+        store =>
+          env =>
+            rho =>
+              data =>
+                (env + (rho -> storeLike.bind(store)()(data)), store)
+      }
 
       val write: Store[A] => Env[A] => Rho => Data[A] => (Env[A],Store[A]) = {
         store =>
