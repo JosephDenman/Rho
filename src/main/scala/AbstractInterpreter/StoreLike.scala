@@ -47,7 +47,7 @@ sealed trait StoreLike[A,S,D]{
 
   val apply: S
 
-  val bind: S => A => D => A
+  val bind: S => D => A
 
   val write: S => A => D => S
 
@@ -55,15 +55,19 @@ sealed trait StoreLike[A,S,D]{
 
   val filter: S => (A => Boolean) => S
 
+  val alloc: Store[Int] => Int = {
+    store =>
+      store.keys.foldLeft(0){(a,b) => Math.max(a,b)} + 1
+  }
 }
 
-object StoreLike2 {
+object StoreLike {
 
-  implicit def abstractStore2[A]: StoreLike[A,Store[A],Data[A]] = {
+  implicit def abstractStore: StoreLike[Int, Store[Int], Data[Int]] = {
 
-    new StoreLike[A, Store[A], Data[A]]{
+    new StoreLike[Int, Store[Int], Data[Int]]{
 
-      val apply: Store[A] = new HashMap[A,Data[A]]
+      val apply: Store[Int] = new HashMap[Int,Data[Int]]
 
       /*
         Joining(⨆) on the abstract store allows each address
@@ -74,49 +78,47 @@ object StoreLike2 {
         variants are associated with a variable.
       */
 
-      val bind: Store[A] => A => Data[A] => A = {
-            // need alloc function for A //
+      val bind: Store[Int] => Data[Int] => Int = {
         store =>
-          address =>
-            data =>
-              ⨆[A, Data[A]](store, List(address -> data))
+          data =>
+            val address = alloc(store)
+              ⨆[Int, Data[Int]](store, List(address -> data))
               address
       }
 
-      val write: Store[A] => A => Data[A] => Store[A] = {
+      val write: Store[Int] => Int => Data[Int] => Store[Int] = {
         store =>
           address =>
             data =>
-              ⨆[A, Data[A]](store, List(address -> data))
+              ⨆[Int, Data[Int]](store, List(address -> data))
       }
 
-      val read: Store[A] => A => Option[Data[A]] = {
+      val read: Store[Int] => Int => Option[Data[Int]] = {
         store =>
           address =>
-            Some(!![A, Data[A]](store).apply(address))
+            Some(!![Int, Data[Int]](store).apply(address))
       }
 
-      val filter: Store[A] => (A => Boolean) => Store[A] = {
+      val filter: Store[Int] => (Int => Boolean) => Store[Int] = {
         store =>
          pre =>
-          store.filterKeys(pre).asInstanceOf[Store[A]]
+          store.filterKeys(pre).asInstanceOf[Store[Int]]
       }
     }
   }
 
-  implicit def concreteStore2: StoreLike[Int, Store[Int], Data[Int]] = {
+  implicit def concreteStore: StoreLike[Int, Store[Int], Data[Int]] = {
 
     new StoreLike[Int, Store[Int], Data[Int]] {
 
       val apply: Store[Int] = new HashMap[Int, Data[Int]]
 
-      val bind: Store[Int] => Int => Data[Int] => Int = {
+      val bind: Store[Int] => Data[Int] => Int = {
         store =>
-          address1 =>
-            data =>
-            val address2 = alloc(store)
-            store + (address2 -> data)
-            address2
+          data =>
+            val address = alloc(store)
+            store + (address -> data)
+            address
       }
 
       val write: Store[Int] => Int => Data[Int] => Store[Int] = {
@@ -136,11 +138,6 @@ object StoreLike2 {
         store =>
           pre =>
             store.filterKeys(pre).asInstanceOf[HashMap[Int, Data[Int]]]
-      }
-
-      val alloc: Store[Int] => Int = {
-        store =>
-          store.keys.foldLeft(0){(a,b) => Math.max(a,b)} + 1
       }
     }
   }

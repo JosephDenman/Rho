@@ -1,42 +1,101 @@
 package ADT
 
-import cats.{Applicative, Eval, Foldable, Functor, Traverse}
+import cats.{Applicative, Bifunctor, Eval, Foldable, Functor, Monad, Traverse}
 
 // P[X]
-sealed trait Proc[Name]
+sealed trait Proc[Chan]
 
 // X := X[P[X]]
 case class Rho(proc: Proc[Rho])
-
 // 0
-case class Zero[Name]() extends Proc[Name]
+case class Zero[Chan]() extends Proc[Chan]
 
 // X!P[X]
-case class Output[Name](x: Name, p: Proc[Name]) extends Proc[Name]
+case class Output[Chan](x: Chan, p: Proc[Chan]) extends Proc[Chan]
 
 // for ( X <- X )P[X]
-case class Input[Name](z: Name, x: Name, p: Proc[Name]) extends Proc[Name]
+case class Input[Chan](z: Chan, x: Chan, p: Proc[Chan]) extends Proc[Chan]
 
 // P[X] | P[X]
-case class Par[Name](left: Proc[Name], right: Proc[Name]) extends Proc[Name]
+case class Par[Chan](left: Proc[Chan], right: Proc[Chan]) extends Proc[Chan]
 
 // *X
-case class Drop[Name](x: Name) extends Proc[Name]
+case class Drop[Chan](x: Chan) extends Proc[Chan]
 
-//
-case class Comm[Name](x: Name, Q: Proc[Name], k: Proc[Name])
 
+trait Chan[A, B]
+
+case class Var[A,B](chan:A) extends Chan[A,B]
+
+case class Quote[A,B](proc:B) extends Chan[A,B]
+
+case class Scope[F[_],A,B](unscope: F[Chan[A,F[B]]])
+
+object Chan {
+  implicit def functorChan[A]: Functor[Chan[A,?]] = new Functor[Chan[A,?]]{
+    def map[B,D](chan: Chan[A,B])(f:B => D): Chan[A,D]
+      = chan match {
+      case Var(ch) => Var(ch)
+      case Quote(proc) => Quote(f(proc))
+    }
+  }
+
+  implicit def bifunctorChan: Bifunctor[Chan] = new Bifunctor[Chan] {
+    def bimap[A, B, C, D](chan: Chan[A,B])
+                         (f: A => C, g: B => D): Chan[C, D]
+    = chan match {
+      case Var(ch) => Var(f(ch))
+      case Quote(proc) => Quote(g(proc))
+    }
+  }
+}
+
+object Scope {
+
+  implicit def bifunctorScope[F[_]](implicit F: Functor[F]): Bifunctor[Scope[F, ?, ?]] = new Bifunctor[Scope[F, ?, ?]] {
+    def bimap[A, B, C, D](scope: Scope[F, A, B])(fa: A => C, fb: B => D): Scope[F, C, D] = {
+      Scope[F, C, D](F.map(scope.unscope)(Chan.bifunctorChan.bimap(_)(fa, F.map(_)(fb))))
+    }
+  }
+
+  implicit def functorScope[F[_],A](implicit F: Functor[F]): Functor[Scope[F, A, ?]] = new Functor[Scope[F, A, ?]] {
+    def map[B, D](scope: Scope[F, A, B])(f: B => D): Scope[F, A, D] = bifunctorScope.bimap[A, B, A, D](scope)(identity, f)
+  }
+
+  implicit def scopeFlatten[F[_],A, B, C](scope: Scope[F, A, B])(f: B => F[C])(implicit F: Monad[F]): Scope[F, A, C] = {
+    val m = scope.unscope
+    Scope[F, A, C](F.flatMap(m)({
+      case Var(ch) => F.pure(Var[A, F[C]](ch))
+      case Quote(proc) => F.map(F.map(proc)(f))(Quote(_))
+    }))
+  }
+
+  implicit def abstracT0[F[_],A,B](p: F[A])(f:A => Option[B])(implicit F: Monad[F]): Scope[F,B,A] = {
+    val k: A => Chan[B,F[A]] = y => {
+      f(y) match {
+        case Some(z) => Var(z)
+        case None => Quote(F.pure(y))
+      }
+    }
+    Scope[F,B,A](F.map(p)(k))
+  }
+
+  implicit def abstracT1[F[_],A](a: A)(p: F[A])(implicit F: Monad[F]): Scope[F,Unit,A] = {
+    Scope.abstracT0[F,A,Unit](p)(b => if(a == b) Some(Unit) else None)
+  }
+
+}
 
 object Proc {
 
   implicit val functorProc: Functor[Proc] = new Functor[Proc]{
     def map[A, B](proc: Proc[A])(func: A => B): Proc[B] =
       proc match {
-        case Zero() => Zero[B]()
-        case Drop(x) => Drop[B](func(x))
-        case Input(z,x,p) => Input[B](func(z),func(x),map(p)(func))
-        case Output(x,p) => Output[B](func(x), map(p)(func))
-        case Par(proc1,proc2) => Par[B](map(proc1)(func), map(proc2)(func))
+        case Zero() => Zero()
+        case Drop(x) => Drop(func(x))
+        case Input(z,x,p) => Input(func(z),func(x),map(p)(func))
+        case Output(x,p) => Output(func(x), map(p)(func))
+        case Par(proc1,proc2) => Par(map(proc1)(func), map(proc2)(func))
       }
   }
 
@@ -50,7 +109,7 @@ object Proc {
         case Par(proc1,proc2) => foldLeft(proc2,foldLeft(proc1,b)(f))(f)
       }
 
-    def foldRight[A, B](proc: Proc[A],lb: Eval[B])(f: (A, Eval[B]) => Eval[B]): Eval[B] =
+    def foldRight[A, B](proc: Proc[A],lb: Eval[B])(f:(A, Eval[B]) => Eval[B]): Eval[B] =
       proc match {
         case Zero() => lb
         case Drop(x) => f(x,lb)
@@ -120,7 +179,3 @@ COMM : 1 -> P
 @ : P -> N
 
 */
-
-// Grammar for Rho with Concrete State Space //
-
-

@@ -42,7 +42,7 @@ object EnvironmentLike {
           env =>
             rho =>
               data =>
-                (env + (rho -> storeLike.bind(store)()(data)), store)
+                (env + (rho -> storeLike.bind(store)(data)), store)
       }
 
       val write: Store[A] => Env[A] => Rho => Data[A] => (Env[A],Store[A]) = {
@@ -69,7 +69,6 @@ object EnvironmentLike {
           pre =>
             env.filterKeys(pre).asInstanceOf[Env[A]]
       }
-
     }
   }
 }
@@ -86,6 +85,9 @@ CEK:
 
 ( val, env, store, fun( λx.e, env', kont ) -> ( e, env'[ x -> a ], store[ a -> (val,env) ] , kont ) where !store.contains(a)
 
+
+
+x!Q | for( z <- x )P -> P{@Q/z}
 
 
 RHO:
