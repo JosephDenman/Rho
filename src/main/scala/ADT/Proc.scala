@@ -7,7 +7,6 @@ sealed trait Proc[Chan]
 
 // X := X[P[X]]
 case class Rho(proc: Proc[Rho])
-
 // 0
 case class Zero[Chan]() extends Proc[Chan]
 
@@ -26,12 +25,11 @@ case class Drop[Chan](x: Chan) extends Proc[Chan]
 
 trait Chan[A, B]
 
-case class Var[A,B](chan: A) extends Chan[A,B]
+case class Var[A,B](chan:A) extends Chan[A,B]
 
-case class Quote[A,B](proc: B) extends Chan[A,B]
+case class Quote[A,B](proc:B) extends Chan[A,B]
 
 case class Scope[F[_],A,B](unscope: F[Chan[A,F[B]]])
-
 
 object Chan {
   implicit def functorChan[A]: Functor[Chan[A,?]] = new Functor[Chan[A,?]]{
@@ -72,7 +70,7 @@ object Scope {
     }))
   }
 
-  implicit def abstracT[F[_],A,B](p: F[A])(f:A => Option[B])(implicit F: Monad[F]): Scope[F,B,A] = {
+  implicit def abstracT0[F[_],A,B](p: F[A])(f:A => Option[B])(implicit F: Monad[F]): Scope[F,B,A] = {
     val k: A => Chan[B,F[A]] = y => {
       f(y) match {
         case Some(z) => Var(z)
@@ -82,9 +80,10 @@ object Scope {
     Scope[F,B,A](F.map(p)(k))
   }
 
-  implicit def abstractT1[F[_],A](a: A)(p: F[A])(implicit F: Monad[F]): Scope[F,Unit,A] = {
-    Scope.abstracT[F,A,Unit](p)(b => if(a == b) Some(Unit) else None)
+  implicit def abstracT1[F[_],A](a: A)(p: F[A])(implicit F: Monad[F]): Scope[F,Unit,A] = {
+    Scope.abstracT0[F,A,Unit](p)(b => if(a == b) Some(Unit) else None)
   }
+
 }
 
 object Proc {
@@ -92,11 +91,11 @@ object Proc {
   implicit val functorProc: Functor[Proc] = new Functor[Proc]{
     def map[A, B](proc: Proc[A])(func: A => B): Proc[B] =
       proc match {
-        case Zero() => Zero[B]()
-        case Drop(x) => Drop[B](func(x))
-        case Input(z,x,p) => Input[B](func(z),func(x),map(p)(func))
-        case Output(x,p) => Output[B](func(x), map(p)(func))
-        case Par(proc1,proc2) => Par[B](map(proc1)(func), map(proc2)(func))
+        case Zero() => Zero()
+        case Drop(x) => Drop(func(x))
+        case Input(z,x,p) => Input(func(z),func(x),map(p)(func))
+        case Output(x,p) => Output(func(x), map(p)(func))
+        case Par(proc1,proc2) => Par(map(proc1)(func), map(proc2)(func))
       }
   }
 
@@ -110,7 +109,7 @@ object Proc {
         case Par(proc1,proc2) => foldLeft(proc2,foldLeft(proc1,b)(f))(f)
       }
 
-    def foldRight[A, B](proc: Proc[A],lb: Eval[B])(f: (A, Eval[B]) => Eval[B]): Eval[B] =
+    def foldRight[A, B](proc: Proc[A],lb: Eval[B])(f:(A, Eval[B]) => Eval[B]): Eval[B] =
       proc match {
         case Zero() => lb
         case Drop(x) => f(x,lb)
@@ -180,7 +179,3 @@ COMM : 1 -> P
 @ : P -> N
 
 */
-
-// Grammar for Rho with Concrete State Space //
-
-
