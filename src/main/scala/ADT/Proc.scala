@@ -1,61 +1,90 @@
 package ADT
 
-import cats.{Applicative, Eval, Foldable, Functor, Traverse}
+import cats.{Applicative, Bifunctor, Eval, Foldable, Functor, Monad, Traverse}
 
 // P[X]
-sealed trait Proc[Name]
+sealed trait Proc[Chan]
 
 // X := X[P[X]]
-case class Rho[F](scope: Scope[Rho[F],F])
-
-
-case class Scope[B,F](proc: Proc[Var[B,Proc[F]]])
+case class Rho(proc: Proc[Rho])
 
 // 0
-case class Zero[Name]() extends Proc[Name]
+case class Zero[Chan]() extends Proc[Chan]
 
 // X!P[X]
-case class Output[Name](x: Name, p: Proc[Name]) extends Proc[Name]
+case class Output[Chan](x: Chan, p: Proc[Chan]) extends Proc[Chan]
 
 // for ( X <- X )P[X]
-case class Input[Name](z: Name, x: Name, p: Proc[Name]) extends Proc[Name]
+case class Input[Chan](z: Chan, x: Chan, p: Proc[Chan]) extends Proc[Chan]
 
 // P[X] | P[X]
-case class Par[Name](left: Proc[Name], right: Proc[Name]) extends Proc[Name]
+case class Par[Chan](left: Proc[Chan], right: Proc[Chan]) extends Proc[Chan]
 
 // *X
-case class Drop[Name](x: Name) extends Proc[Name]
+case class Drop[Chan](x: Chan) extends Proc[Chan]
 
 
-sealed trait Var[B,F]
+trait Chan[A, B]
 
-case class Bound[B,F](bound: B) extends Var[B,F]
+case class Var[A,B](chan: A) extends Chan[A,B]
 
-case class Free[B,F](free: F) extends Var[B,F]
+case class Quote[A,B](proc: B) extends Chan[A,B]
+
+case class Scope[F[_],A,B](unscope: F[Chan[A,F[B]]])
 
 
-//case class Comm[Name](x: Name, Q: Proc[Name], k: Proc[Name])
+object Chan {
+  implicit def functorChan[A]: Functor[Chan[A,?]] = new Functor[Chan[A,?]]{
+    def map[B,D](chan: Chan[A,B])(f:B => D): Chan[A,D]
+      = chan match {
+      case Var(ch) => Var(ch)
+      case Quote(proc) => Quote(f(proc))
+    }
+  }
 
-object Example {
+  implicit def bifunctorChan: Bifunctor[Chan] = new Bifunctor[Chan] {
+    def bimap[A, B, C, D](chan: Chan[A,B])
+                         (f: A => C, g: B => D): Chan[C, D]
+    = chan match {
+      case Var(ch) => Var(f(ch))
+      case Quote(proc) => Quote(g(proc))
+    }
+  }
+}
 
-  val x = Rho(Scope(Zero()))
+object Scope {
 
-  val Q = Par(Zero(),Zero())
+  implicit def bifunctorScope[F[_]](implicit F: Functor[F]): Bifunctor[Scope[F, ?, ?]] = new Bifunctor[Scope[F, ?, ?]] {
+    def bimap[A, B, C, D](scope: Scope[F, A, B])(fa: A => C, fb: B => D): Scope[F, C, D] = {
+      Scope[F, C, D](F.map(scope.unscope)(Chan.bifunctorChan.bimap(_)(fa, F.map(_)(fb))))
+    }
+  }
 
-  val output = Output(x,Q)
+  implicit def functorScope[F[_],A](implicit F: Functor[F]): Functor[Scope[F, A, ?]] = new Functor[Scope[F, A, ?]] {
+    def map[B, D](scope: Scope[F, A, B])(f: B => D): Scope[F, A, D] = bifunctorScope.bimap[A, B, A, D](scope)(identity, f)
+  }
 
-  val z = Rho(Scope(Free[String,Rho[String]]("z"))
+  implicit def scopeFlatten[F[_],A, B, C](scope: Scope[F, A, B])(f: B => F[C])(implicit F: Monad[F]): Scope[F, A, C] = {
+    val m = scope.unscope
+    Scope[F, A, C](F.flatMap(m)({
+      case Var(ch) => F.pure(Var[A, F[C]](ch))
+      case Quote(proc) => F.map(F.map(proc)(f))(Quote(_))
+    }))
+  }
 
-  val input = Input(z, x, Zero())
+  implicit def abstracT[F[_],A,B](p: F[A])(f:A => Option[B])(implicit F: Monad[F]): Scope[F,B,A] = {
+    val k: A => Chan[B,F[A]] = y => {
+      f(y) match {
+        case Some(z) => Var(z)
+        case None => Quote(F.pure(y))
+      }
+    }
+    Scope[F,B,A](F.map(p)(k))
+  }
 
-  val par = Par(output, input)
-
-  val drop = z.proc
-
-  // @0!(0) | for( @0 <- @0 ){ 0 } -> 0{@0/@0}
-  // x!Q | for( z <- x ){ P } -> P{@Q/z}
-  //
-
+  implicit def abstractT1[F[_],A](a: A)(p: F[A])(implicit F: Monad[F]): Scope[F,Unit,A] = {
+    Scope.abstracT[F,A,Unit](p)(b => if(a == b) Some(Unit) else None)
+  }
 }
 
 object Proc {

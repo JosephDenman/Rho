@@ -4,7 +4,7 @@
 		module="rho_2.12"
 		revision="0.1"
 		status="integration"
-		publication="20171211172411"
+		publication="20171218155609"
 	>
 		<description>
 		Rho
@@ -35,5 +35,6 @@
 		<dependency org="org.scala-lang" name="scala-compiler" rev="2.12.4" conf="scala-tool->default,optional(default)"/>
 		<dependency org="org.scala-lang" name="scala-library" rev="2.12.4" conf="scala-tool->default,optional(default);compile->default(compile)"/>
 		<dependency org="org.typelevel" name="cats-core_2.12" rev="1.0.0-RC1" conf="compile->default(compile)"/>
+		<dependency org="org.spire-math" name="kind-projector_2.12" rev="0.9.4" conf="plugin->default(compile)"/>
 	</dependencies>
 </ivy-module>
