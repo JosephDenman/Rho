@@ -6,6 +6,8 @@ import cats.{Applicative, Bifunctor, Eval, Foldable, Functor, Monad, Traverse}
 sealed trait Proc[Chan]
 
 // X := X[P[X]]
+// newtype Rho chan = Rho {unRho :: Scope chan Proc (Rho Void)}
+// case class Rho[chan](proc: Scope[chan,Proc[Rho[Void]]])
 case class Rho(proc: Proc[Rho])
 // 0
 case class Zero[Chan]() extends Proc[Chan]
@@ -21,6 +23,25 @@ case class Par[Chan](left: Proc[Chan], right: Proc[Chan]) extends Proc[Chan]
 
 // *X
 case class Drop[Chan](x: Chan) extends Proc[Chan]
+
+/**
+ * The uninhabited type.
+ */
+case class Void(z: Void)
+
+object Void {
+
+  /**
+   * Logical reasoning of type 'ex contradictione sequitur quodlibet'
+   */
+  def absurd[A](z: Void): A = absurd(z)
+
+  def vacuous[F[_], A](fa: F[Void], z: Void)(implicit F: Functor[F]): F[A] = F.map(fa)(absurd(z))
+
+  // implicit def voidSemiGroup: Semigroup[Void] = new Semigroup[Void] {
+  //   def append(f1: Void, f2: => Void) = f2 //right biased
+  }
+}
 
 
 trait Chan[A, B]
