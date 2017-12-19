@@ -40,9 +40,8 @@ object Void {
 
   // implicit def voidSemiGroup: Semigroup[Void] = new Semigroup[Void] {
   //   def append(f1: Void, f2: => Void) = f2 //right biased
-  }
+  // }
 }
-
 
 trait Chan[A, B]
 
