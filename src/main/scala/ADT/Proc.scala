@@ -2,27 +2,23 @@ package ADT
 
 import cats.{Applicative, Bifunctor, Eval, Foldable, Functor, Monad, Traverse}
 
-// P[X]
-sealed trait Proc[Chan]
+
 
 // X := X[P[X]]
-// newtype Rho chan = Rho {unRho :: Scope chan Proc (Rho Void)}
-// case class Rho[chan](proc: Scope[chan,Proc[Rho[Void]]])
 case class Rho(proc: Proc[Rho])
-// 0
-case class Zero[Chan]() extends Proc[Chan]
 
-// X!P[X]
-case class Output[Chan](x: Chan, p: Proc[Chan]) extends Proc[Chan]
-
-// for ( X <- X )P[X]
-case class Input[Chan](z: Chan, x: Chan, p: Proc[Chan]) extends Proc[Chan]
-
-// P[X] | P[X]
-case class Par[Chan](left: Proc[Chan], right: Proc[Chan]) extends Proc[Chan]
-
-// *X
-case class Drop[Chan](x: Chan) extends Proc[Chan]
+// P[X]
+sealed trait Proc[chan]
+  // 0
+  case class Zero[Chan]() extends Proc[Chan]
+  // X!P[X]
+  case class Output[Chan](x: Chan, p: Proc[Chan]) extends Proc[Chan]
+  // for ( Z <- X )P[Z]
+  case class Input[Chan](x: Chan, p: Scope[Proc[?],Unit,Chan]) extends Proc[Chan]
+  // P[X] | P[X]
+  case class Par[Chan](left: Proc[Chan], right: Proc[Chan]) extends Proc[Chan]
+  // *X
+  case class Drop[Chan](x: Chan) extends Proc[Chan]
 
 /**
  * The uninhabited type.
@@ -113,7 +109,7 @@ object Proc {
       proc match {
         case Zero() => Zero()
         case Drop(x) => Drop(func(x))
-        case Input(z,x,p) => Input(func(z),func(x),map(p)(func))
+        case Input(x,p) => sys.error("unimplemented")
         case Output(x,p) => Output(func(x), map(p)(func))
         case Par(proc1,proc2) => Par(map(proc1)(func), map(proc2)(func))
       }
@@ -124,7 +120,7 @@ object Proc {
       proc match {
         case Zero() => b
         case Drop(x) => f(b,x)
-        case Input(z,x,p) => f(f(foldLeft(p,b)(f),x),z)
+        case Input(x,p) => sys.error("unimplemented")
         case Output(x,p) => f(foldLeft(p,b)(f),x)
         case Par(proc1,proc2) => foldLeft(proc2,foldLeft(proc1,b)(f))(f)
       }
@@ -133,7 +129,7 @@ object Proc {
       proc match {
         case Zero() => lb
         case Drop(x) => f(x,lb)
-        case Input(z,x,p) => f(x,f(z,foldRight(p,lb)(f)))
+        case Input(x,p) => sys.error("unimplemented")
         case Output(x,p) => f(x,foldRight(p,lb)(f))
         case Par(proc1,proc2) => foldRight(proc1,foldRight(proc2,lb)(f))(f)
       }
@@ -145,7 +141,7 @@ object Proc {
       proc match {
         case Zero() => ap.pure(Zero[B]())
         case Drop(x) => ap.map(func(x))(Drop[B])
-        case Input(z,x,p) => ap.map3(func(z), func(x), traverse(p)(func))(Input[B])
+        case Input(x,p) => sys.error("unimplemented")
         case Output(x,p) => ap.map2(func(x), traverse(p)(func))(Output[B])
         case Par(proc1,proc2) => ap.map2(traverse(proc1)(func), traverse(proc2)(func))(Par[B])
       }
@@ -165,14 +161,19 @@ object Proc {
     rho match {
       case Rho(Zero()) => 0
       case Rho(Drop(x)) => unquotecost + cost(x)
-      case Rho(Input(z,x,proc)) => bindcost + cost(Rho(proc))
+      case Rho(Input(x,proc)) => sys.error("unimplemented")
       case Rho(Output(x,proc)) => quotecost + writecost
       case Rho(Par(proc1,proc2)) => cost(Rho(proc1)) + cost(Rho(proc2))
     }
   }
 }
 
+// newtype Rho chan = Rho {unRho :: Scope chan Proc (Rho Void)}
+case class Rho2[chan](proc: Scope[Proc[?],chan,Rho2[Void]])
 
+object Rho2{
+  def zero[chan]: Rho2[chan] = Rho2(Scope(Zero()))
+}
 
 /*
 
