@@ -12,8 +12,6 @@ import cats.{
   Traverse
 }
 
-
-
 // X := X[P[X]]
 case class Rho(proc: Proc[Rho])
 
