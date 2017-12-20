@@ -1,6 +1,16 @@
 package ADT
 
-import cats.{Applicative, Bifunctor, Eval, Foldable, Functor, Monad, Traverse}
+import cats.{
+  Applicative,
+  Bifoldable,
+  Bifunctor,
+  Bitraverse,
+  Eval,
+  Foldable,
+  Functor,
+  Monad,
+  Traverse
+}
 
 
 
@@ -40,12 +50,8 @@ object Void {
 }
 
 trait Chan[A, B]
-
-case class Var[A,B](chan:A) extends Chan[A,B]
-
-case class Quote[A,B](proc:B) extends Chan[A,B]
-
-case class Scope[F[_],A,B](unscope: F[Chan[A,F[B]]])
+  case class Var[A,B](chan:A) extends Chan[A,B]
+  case class Quote[A,B](proc:B) extends Chan[A,B]
 
 object Chan {
   implicit def functorChan[A]: Functor[Chan[A,?]] = new Functor[Chan[A,?]]{
@@ -64,7 +70,71 @@ object Chan {
       case Quote(proc) => Quote(g(proc))
     }
   }
+
+  implicit def bifoldableChan: Bifoldable[Chan] = new Bifoldable[Chan] {
+    def bifoldLeft[A, B, C]
+      (fab: Chan[A, B], c: C)
+      (f: (C, A) => C, g: (C, B) => C): C
+      = fab match {
+        case Var(ch) => f(c,ch)
+        case Quote(proc) => g(c,proc)
+      }
+    def bifoldRight[A, B, C]
+      (fab: Chan[A, B], c: Eval[C])
+      (f: (A, Eval[C]) => Eval[C], g: (B, Eval[C]) => Eval[C]): Eval[C]
+      = fab match {
+        case Var(ch) => f(ch,c)
+        case Quote(proc) => g(proc,c)
+      }
+  }
+
+  implicit def foldableChan[Ch]: Foldable[Chan[Ch,?]] = new Foldable[Chan[Ch,?]] {
+    def foldLeft[A, B](fa: Chan[Ch,A], b: B)(f: (B, A) => B): B
+    = fa match {
+      case Var(ch) => b
+      case Quote(proc) => f(b,proc)
+    }
+    def foldRight[A, B](fa: Chan[Ch,A], lb: Eval[B])(f: (A, Eval[B]) => Eval[B]): Eval[B]
+    = fa match {
+      case Var(ch) => lb
+      case Quote(proc) => f(proc,lb)
+    }
+  }
+
+  implicit def bitraverseChan: Bitraverse[Chan] = new Bitraverse[Chan]{
+    def bifoldLeft[A, B, C]
+      (fab: Chan[A, B], c: C)
+      (f: (C, A) => C, g: (C, B) => C): C
+      = Chan.bifoldableChan.bifoldLeft(fab,c)(f,g)
+    def bifoldRight[A, B, C]
+      (fab: Chan[A, B], c: Eval[C])
+      (f: (A, Eval[C]) => Eval[C], g: (B, Eval[C]) => Eval[C]): Eval[C]
+      = Chan.bifoldableChan.bifoldRight(fab,c)(f,g)
+    def bitraverse[G[_], A, B, C, D]
+      (fab: Chan[A, B])
+      (f: (A) => G[C], g: (B) => G[D])
+      (implicit arg0: Applicative[G]): G[Chan[C, D]]
+      = fab match {
+        case Var(ch) => arg0.map (f(ch)) (Var(_))
+        case Quote(proc) => arg0.map (g(proc)) (Quote(_))
+      }
+  }
+
+  implicit def traverseChan[Var]: Traverse[Chan[Var,?]] = new Traverse[Chan[Var,?]]{
+    def foldLeft[A, B](fa: Chan[Var,A], b: B)(f: (B, A) => B): B
+    = Chan.foldableChan.foldLeft(fa,b)(f)
+    def foldRight[A, B](fa: Chan[Var,A], lb: Eval[B])(f: (A, Eval[B]) => Eval[B]): Eval[B]
+    = Chan.foldableChan.foldRight(fa,lb)(f)
+    def traverse[G[_], A, B](fa: Chan[Var,A])(f: (A) => G[B])(implicit arg0: Applicative[G]): G[Chan[Var,B]]
+    = fa match {
+      case Var(x) => arg0.pure(Var(x))
+      case Quote(proc) => arg0.map (f(proc)) (Quote(_))
+    }
+  }
+
 }
+
+case class Scope[F[_],A,B](unscope: F[Chan[A,F[B]]])
 
 object Scope {
 
@@ -76,6 +146,33 @@ object Scope {
 
   implicit def functorScope[F[_],A](implicit F: Functor[F]): Functor[Scope[F, A, ?]] = new Functor[Scope[F, A, ?]] {
     def map[B, D](scope: Scope[F, A, B])(f: B => D): Scope[F, A, D] = bifunctorScope.bimap[A, B, A, D](scope)(identity, f)
+  }
+
+  implicit def bifoldableScope[F[_]](implicit F: Foldable[F]): Bifoldable[Scope[F, ?, ?]] = new Bifoldable[Scope[F,?,?]] {
+    def bifoldLeft[A, B, C]
+      (fab: Scope[F, A, B], c: C)
+      (f: (C, A) => C, g: (C, B) => C): C
+      = F.foldLeft (fab.unscope,c) ((acc,ch) => Chan.bifoldableChan.bifoldLeft(ch,acc)(f,(cc,fb) => F.foldLeft (fb,cc) (g)))
+    def bifoldRight[A, B, C]
+      (fab: Scope[F, A, B], c: Eval[C])
+      (f: (A, Eval[C]) => Eval[C], g: (B, Eval[C]) => Eval[C]): Eval[C]
+      = F.foldRight (fab.unscope,c) ((ch,acc) => Chan.bifoldableChan.bifoldRight(ch,acc)(f,(cc,fb) => F.foldRight (cc,fb) (g)))
+  }
+
+  implicit def bitraverseScope[F[_]](implicit F: Traverse[F]): Bitraverse[Scope[F,?,?]] = new Bitraverse[Scope[F,?,?]]{
+    def bifoldLeft[A, B, C]
+      (fab: Scope[F, A, B], c: C)
+      (f: (C, A) => C, g: (C, B) => C): C
+      = Scope.bifoldableScope.bifoldLeft(fab,c)(f,g)
+    def bifoldRight[A, B, C]
+      (fab: Scope[F, A, B], c: Eval[C])
+      (f: (A, Eval[C]) => Eval[C], g: (B, Eval[C]) => Eval[C]): Eval[C]
+      = Scope.bifoldableScope.bifoldRight(fab,c)(f,g)
+    def bitraverse[G[_], A, B, C, D]
+      (fab: Scope[F,A, B])
+      (f: (A) => G[C], g: (B) => G[D])
+      (implicit arg0: Applicative[G]): G[Scope[F, C, D]]
+      = arg0.map (F.traverse (fab.unscope) (chan => Chan.bitraverseChan.bitraverse (chan) (f,F.traverse (_) (g)))) (Scope(_))
   }
 
   implicit def scopeFlatten[F[_],A, B, C](scope: Scope[F, A, B])(f: B => F[C])(implicit F: Monad[F]): Scope[F, A, C] = {
