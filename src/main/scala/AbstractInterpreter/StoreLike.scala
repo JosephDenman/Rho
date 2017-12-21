@@ -1,57 +1,19 @@
 package AbstractInterpreter
-
-import AbstractInterpreter.Aliases.{Data, Store}
-import AbstractInterpreter.Lattice._
+import ADT.Rho
+import AbstractInterpreter.Aliases.{Channel, Clo, Store}
+import monix.eval.{MVar, Task}
 
 import scala.collection.immutable.HashMap
 
-// object StoreLike{
-//   type Data[A] = String
-//   type Store[A] = HashMap[A,Data[A]]
-
-//   val simpleApply: Store[A] = new HashMap[A, Data[A]]
-//   val simpleBind: (Store[A], A, Data[A]) => Store[A]
-//   = (store: Store[A], address: A, data: Data[A]) => ⨆[A, Data[A]](store, List(address -> data))
-//   val simpleRead: (Store[A], A) => Option[Data[A]]
-//   = (store: Store[A], address: A) => Some(!![A, Data[A]](store).apply(address))
-//   val simpleWrite: (Store[A], A, Data[A]) => Store[A]
-//   = (store: Store[A], address: A, data: Data[A]) => ⨆[A, Data[A]](store, List(address -> data))
-//   val simpleFilterStore: (Store[A], A => Boolean) => Store[A]
-//   = (store: Store[A], pre: A => Boolean) => store.filterKeys(pre).asInstanceOf[HashMap[A, Data[A]]]
-
-//   val smartApply: Store[A] = new HashMap[A, Data[A]]
-
-//   val smartBind: (Store[A], A, Data[A]) => Store[A]
-//     = (store: Store[A], address: A, data: Data[A]) => {
-//       val item: Option[Data[A]] = store.get(address)
-//       item match {
-//         case None => store + (address -> data)
-//         case Some(prev) => sys.error("reassignment to val")
-//       }
-//     }
-
-//   val smartRead: (Store[A], A) => Option[Data[A]]
-//     = (store: Store[A], address: A) => {
-//     store.get(address)
-//     }
-
-//   val smartWrite: (Store[A], A, Data[A]) => Store[A]
-//     = (store: Store[A], address: A, data: Data[A]) => store + (address -> data)
-
-//   val smartFilterStore: (Store[A], A => Boolean) => Store[A]
-//     = (store: Store[A], pre: A => Boolean) => store.filterKeys(pre).asInstanceOf[HashMap[A, Data[A]]]
-
-// }
-
-sealed trait StoreLike[A,S,D]{
+sealed trait StoreLike[A,S,C]{
 
   val apply: S
 
-  val bind: S => D => A
+  val bind: S => C => A
 
-  val write: S => A => D => S
+  val write: S => A => C => S
 
-  val read: S => A => Option[D]
+  val read: S => A => Option[C]
 
   val filter: S => (A => Boolean) => S
 
@@ -63,11 +25,11 @@ sealed trait StoreLike[A,S,D]{
 
 object StoreLike {
 
-  implicit def abstractStore: StoreLike[Int, Store[Int], Data[Int]] = {
+  /*implicit def abstractStore: StoreLike[Int, Store[Int], Clo[Int]] = {
 
-    new StoreLike[Int, Store[Int], Data[Int]]{
+    new StoreLike[Int, Store[Int], Clo[Int]]{
 
-      val apply: Store[Int] = new HashMap[Int,Data[Int]]
+      val apply: Store[Int] = new HashMap[Int,Clo[Int]]
 
       /*
         Joining(⨆) on the abstract store allows each address
@@ -78,25 +40,25 @@ object StoreLike {
         variants are associated with a variable.
       */
 
-      val bind: Store[Int] => Data[Int] => Int = {
+      val bind: Store[Int] => Clo[Int] => Int = {
         store =>
           data =>
             val address = alloc(store)
-              ⨆[Int, Data[Int]](store, List(address -> data))
+              ⨆[Int, Clo[Int]](store, List(address -> data))
               address
       }
 
-      val write: Store[Int] => Int => Data[Int] => Store[Int] = {
+      val write: Store[Int] => Int => Clo[Int] => Store[Int] = {
         store =>
           address =>
             data =>
-              ⨆[Int, Data[Int]](store, List(address -> data))
+              ⨆[Int, Clo[Int]](store, List(address -> data))
       }
 
-      val read: Store[Int] => Int => Option[Data[Int]] = {
+      val read: Store[Int] => Int => Option[Clo[Int]] = {
         store =>
           address =>
-            Some(!![Int, Data[Int]](store).apply(address))
+            Some(!![Int, Clo[Int]](store).apply(address))
       }
 
       val filter: Store[Int] => (Int => Boolean) => Store[Int] = {
@@ -105,15 +67,15 @@ object StoreLike {
           store.filterKeys(pre).asInstanceOf[Store[Int]]
       }
     }
-  }
+  } */
 
-  implicit def concreteStore: StoreLike[Int, Store[Int], Data[Int]] = {
+  implicit def simpleStore: StoreLike[Int, Store[Int], Clo[Int]] = {
 
-    new StoreLike[Int, Store[Int], Data[Int]] {
+    new StoreLike[Int, Store[Int], Clo[Int]] {
 
-      val apply: Store[Int] = new HashMap[Int, Data[Int]]
+      val apply: Store[Int] = new HashMap[Int, Clo[Int]]
 
-      val bind: Store[Int] => Data[Int] => Int = {
+      val bind: Store[Int] => Clo[Int] => Int = {
         store =>
           data =>
             val address = alloc(store)
@@ -121,14 +83,14 @@ object StoreLike {
             address
       }
 
-      val write: Store[Int] => Int => Data[Int] => Store[Int] = {
+      val write: Store[Int] => Int => Clo[Int] => Store[Int] = {
         store =>
           address =>
-            data =>
-              store + (address -> data)
+            clo =>
+              store + (address -> clo)
       }
 
-      val read: Store[Int] => Int => Option[Data[Int]] = {
+      val read: Store[Int] => Int => Option[Clo[Int]] = {
         store =>
           address =>
             store.get(address)
@@ -137,8 +99,43 @@ object StoreLike {
       val filter: Store[Int] => (Int => Boolean) => Store[Int] = {
         store =>
           pre =>
-            store.filterKeys(pre).asInstanceOf[HashMap[Int, Data[Int]]]
+            store.filterKeys(pre).asInstanceOf[HashMap[Int, Clo[Int]]]
       }
+    }
+  }
+}
+
+
+trait PureStoreLike[M[_],A,C]{
+
+  val bind: A => C => M[_]
+
+  val write: A => C => M[_]
+
+  val read: A => M[_]
+
+  val alloc: C => M[_]
+
+}
+
+object PureStoreLike {
+
+  implicit def mvarStore: PureStoreLike[Task,Channel[Rho],Rho] = {
+
+    new PureStoreLike[Task,Channel[Rho],Rho] {
+
+      val alloc: Rho => Task[Channel[Rho]] =
+        rho => Task { MVar.empty }
+
+      val write: Channel[Rho] => Rho => Task[Unit] =
+        ch => rho => ch.put(rho)
+
+      val bind: Channel[Rho] => Rho => Task[Unit] =
+        addr => rho => write(addr)(rho)
+
+      val read: Channel[Rho] => Task[Rho] =
+        ch => ch.take
+
     }
   }
 }

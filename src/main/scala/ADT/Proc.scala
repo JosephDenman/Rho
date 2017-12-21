@@ -16,7 +16,7 @@ import cats.{
 case class Rho(proc: Proc[Rho])
 
 // P[X]
-sealed trait Proc[chan]
+sealed trait Proc[Chan]
   // 0
   case class Zero[Chan]() extends Proc[Chan]
   // X!P[X]
