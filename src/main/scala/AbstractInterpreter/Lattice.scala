@@ -1,7 +1,4 @@
 package AbstractInterpreter
-import cats.Eq
-import cats.Order
-import cats.Show
 
 import scala.collection.immutable.HashMap
 

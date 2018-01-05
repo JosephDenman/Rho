@@ -1,32 +1,42 @@
 package ADT
 
-import cats.{
-  Applicative,
-  Bifoldable,
-  Bifunctor,
-  Bitraverse,
-  Eval,
-  Foldable,
-  Functor,
-  Monad,
-  Traverse
+import cats.Functor
+
+// Term constructors
+trait Proc[+Chan] extends Serializable{
+  override def toString: String
 }
 
-// X := X[P[X]]
-case class Rho(proc: Proc[Rho])
+  // 0 : 1 -> P
+  case class Zero[Chan]() extends Proc[Chan]{
+    override def toString: String = "0"
+  }
 
-// P[X]
-sealed trait Proc[Chan]
-  // 0
-  case class Zero[Chan]() extends Proc[Chan]
-  // X!P[X]
-  case class Output[Chan](x: Chan, p: Proc[Chan]) extends Proc[Chan]
-  // for ( Z <- X )P[Z]
-  case class Input[Chan](x: Chan, p: Scope[Proc[?],Unit,Chan]) extends Proc[Chan]
-  // P[X] | P[X]
-  case class Par[Chan](left: Proc[Chan], right: Proc[Chan]) extends Proc[Chan]
-  // *X
-  case class Drop[Chan](x: Chan) extends Proc[Chan]
+  // ! : N x P -> P
+  case class Output[Chan](x: Chan, q: Proc[Chan]) extends Proc[Chan]{
+    override def toString: String = x.toString + "!(" + q.toString + ")"
+  }
+
+  // for : N x N x P -> P
+  case class Input[Chan](z: Chan, x: Chan, k: Proc[Chan]) extends Proc[Chan]{
+    override def toString: String = "for( " + z.toString + " <- " + x.toString + " ){ " + k.toString + " }"
+  }
+
+  // | : P x P -> P
+  case class Par[Chan](left: Proc[Chan], right: Proc[Chan]) extends Proc[Chan]{
+    override def toString: String = left.toString + " | " + right.toString
+  }
+
+  // * : N -> P
+  case class Drop[Chan](x: Chan) extends Proc[Chan]{
+    override def toString: String = "*" + x.toString
+  }
+
+  // and the one we hold on faith - New : N x P -> P
+  case class New[Chan](x: Chan, p: Proc[Chan]) extends Proc[Chan]{
+    override def toString: String = "new " + x + " in { " + p.toString + " }"
+  }
+
 
 /*
  * The uninhabited type.
@@ -48,11 +58,12 @@ object Void {
   // }
 }
 
-trait Chan[A, B]
-  case class Var[A,B](chan:A) extends Chan[A,B]
-  case class Quote[A,B](proc:B) extends Chan[A,B]
+/* trait Chan[A, B]
+  //case class Var[A,B](chan:A) extends Chan[A,B]
+ // case class Quote[A,B](proc:B) extends Chan[A,B]
 
-object Chan {
+object Chan { }
+
   implicit def functorChan[A]: Functor[Chan[A,?]] = new Functor[Chan[A,?]]{
     def map[B,D](chan: Chan[A,B])(f:B => D): Chan[A,D]
       = chan match {
@@ -71,16 +82,14 @@ object Chan {
   }
 
   implicit def bifoldableChan: Bifoldable[Chan] = new Bifoldable[Chan] {
-    def bifoldLeft[A, B, C]
-      (fab: Chan[A, B], c: C)
-      (f: (C, A) => C, g: (C, B) => C): C
+    def bifoldLeft[A, B, C](fab: Chan[A, B], c: C)
+                           (f: (C, A) => C, g: (C, B) => C): C
       = fab match {
         case Var(ch) => f(c,ch)
         case Quote(proc) => g(c,proc)
       }
-    def bifoldRight[A, B, C]
-      (fab: Chan[A, B], c: Eval[C])
-      (f: (A, Eval[C]) => Eval[C], g: (B, Eval[C]) => Eval[C]): Eval[C]
+    def bifoldRight[A, B, C](fab: Chan[A, B], c: Eval[C])
+                            (f: (A, Eval[C]) => Eval[C], g: (B, Eval[C]) => Eval[C]): Eval[C]
       = fab match {
         case Var(ch) => f(ch,c)
         case Quote(proc) => g(proc,c)
@@ -101,18 +110,15 @@ object Chan {
   }
 
   implicit def bitraverseChan: Bitraverse[Chan] = new Bitraverse[Chan]{
-    def bifoldLeft[A, B, C]
-      (fab: Chan[A, B], c: C)
-      (f: (C, A) => C, g: (C, B) => C): C
+    def bifoldLeft[A, B, C](fab: Chan[A, B], c: C)
+                           (f: (C, A) => C, g: (C, B) => C): C
       = Chan.bifoldableChan.bifoldLeft(fab,c)(f,g)
-    def bifoldRight[A, B, C]
-      (fab: Chan[A, B], c: Eval[C])
-      (f: (A, Eval[C]) => Eval[C], g: (B, Eval[C]) => Eval[C]): Eval[C]
+    def bifoldRight[A, B, C](fab: Chan[A, B], c: Eval[C])
+                            (f: (A, Eval[C]) => Eval[C], g: (B, Eval[C]) => Eval[C]): Eval[C]
       = Chan.bifoldableChan.bifoldRight(fab,c)(f,g)
-    def bitraverse[G[_], A, B, C, D]
-      (fab: Chan[A, B])
-      (f: (A) => G[C], g: (B) => G[D])
-      (implicit arg0: Applicative[G]): G[Chan[C, D]]
+    def bitraverse[G[_], A, B, C, D](fab: Chan[A, B])
+                                    (f: (A) => G[C], g: (B) => G[D])
+                                    (implicit arg0: Applicative[G]): G[Chan[C, D]]
       = fab match {
         case Var(ch) => arg0.map (f(ch)) (Var(_))
         case Quote(proc) => arg0.map (g(proc)) (Quote(_))
@@ -195,104 +201,79 @@ object Scope {
   implicit def abstracT1[F[_],A](a: A)(p: F[A])(implicit F: Monad[F]): Scope[F,Unit,A] = {
     Scope.abstracT0[F,A,Unit](p)(b => if(a == b) Some(Unit) else None)
   }
-
 }
 
-object Proc {
-
-  implicit val functorProc: Functor[Proc] = new Functor[Proc]{
+  implicit val functorProc: Functor[Proc] = new Functor[Proc] {
     def map[A, B](proc: Proc[A])(func: A => B): Proc[B] =
       proc match {
         case Zero() => Zero()
         case Drop(x) => Drop(func(x))
-        case Input(x,p) => sys.error("unimplemented")
-        case Output(x,p) => Output(func(x), map(p)(func))
-        case Par(proc1,proc2) => Par(map(proc1)(func), map(proc2)(func))
+        case Input(x, p) => sys.error("unimplemented")
+        case Output(x, p) => Output(func(x), map(p)(func))
+        case Par(proc1, proc2) => Par(map(proc1)(func), map(proc2)(func))
       }
   }
 
-  implicit val foldableProc: Foldable[Proc] = new Foldable[Proc]{
-    def foldLeft[A, B](proc: Proc[A],b: B)(f: (B, A) => B): B =
+  implicit val foldableProc: Foldable[Proc] = new Foldable[Proc] {
+    def foldLeft[A, B](proc: Proc[A], b: B)(f: (B, A) => B): B =
       proc match {
         case Zero() => b
-        case Drop(x) => f(b,x)
-        case Input(x,p) => sys.error("unimplemented")
-        case Output(x,p) => f(foldLeft(p,b)(f),x)
-        case Par(proc1,proc2) => foldLeft(proc2,foldLeft(proc1,b)(f))(f)
+        case Drop(x) => f(b, x)
+       // case Input(x, p) => sys.error("unimplemented")
+        case Output(x, p) => f(foldLeft(p, b)(f), x)
+        case Par(proc1, proc2) => foldLeft(proc2, foldLeft(proc1, b)(f))(f)
       }
 
-    def foldRight[A, B](proc: Proc[A],lb: Eval[B])(f:(A, Eval[B]) => Eval[B]): Eval[B] =
+    def foldRight[A, B](proc: Proc[A], lb: Eval[B])(f: (A, Eval[B]) => Eval[B]): Eval[B] =
       proc match {
         case Zero() => lb
-        case Drop(x) => f(x,lb)
-        case Input(x,p) => sys.error("unimplemented")
-        case Output(x,p) => f(x,foldRight(p,lb)(f))
-        case Par(proc1,proc2) => foldRight(proc1,foldRight(proc2,lb)(f))(f)
+        case Drop(x) => f(x, lb)
+       // case Input(x, p) => sys.error("unimplemented")
+        case Output(x, p) => f(x, foldRight(p, lb)(f))
+        case Par(proc1, proc2) => foldRight(proc1, foldRight(proc2, lb)(f))(f)
       }
   }
 
-  implicit val traversableProc: Traverse[Proc] = new Traverse[Proc]{
+  implicit val traversableProc: Traverse[Proc] = new Traverse[Proc] {
 
     def traverse[G[_], A, B](proc: Proc[A])(func: A => G[B])(implicit ap: Applicative[G]): G[Proc[B]] =
       proc match {
         case Zero() => ap.pure(Zero[B]())
         case Drop(x) => ap.map(func(x))(Drop[B])
-        case Input(x,p) => sys.error("unimplemented")
-        case Output(x,p) => ap.map2(func(x), traverse(p)(func))(Output[B])
-        case Par(proc1,proc2) => ap.map2(traverse(proc1)(func), traverse(proc2)(func))(Par[B])
+       // case Input(x, p) => sys.error("unimplemented")
+        case Output(x, p) => ap.map2(func(x), traverse(p)(func))(Output[B])
+        case Par(proc1, proc2) => ap.map2(traverse(proc1)(func), traverse(proc2)(func))(Par[B])
       }
 
-    def foldLeft[A, B](proc: Proc[A],b: B)(f: (B, A) => B): B =
-      foldableProc.foldLeft(proc,b)(f)
+    def foldLeft[A, B](proc: Proc[A], b: B)(f: (B, A) => B): B =
+      foldableProc.foldLeft(proc, b)(f)
 
-    def foldRight[A, B](proc: Proc[A],lb: Eval[B])(f: (A, Eval[B]) => Eval[B]): Eval[B] =
-      foldableProc.foldRight(proc,lb)(f)
-  }
+    def foldRight[A, B](proc: Proc[A], lb: Eval[B])(f: (A, Eval[B]) => Eval[B]): Eval[B] =
+      foldableProc.foldRight(proc, lb)(f)
+  }*/
 
-  def cost(rho: Rho): Int = {
-    val unquotecost: Int = sys.error("implement unquote cost")
-    val quotecost: Int = sys.error("implement quote cost")
-    val bindcost: Int = sys.error("implement bind cost")
-    val writecost: Int = sys.error("implement write cost")
-    rho match {
-      case Rho(Zero()) => 0
-      case Rho(Drop(x)) => unquotecost + cost(x)
-      case Rho(Input(x,proc)) => sys.error("unimplemented")
-      case Rho(Output(x,proc)) => quotecost + writecost
-      case Rho(Par(proc1,proc2)) => cost(Rho(proc1)) + cost(Rho(proc2))
-    }
-  }
-}
-
-// newtype Rho chan = Rho {unRho :: Scope chan Proc (Rho Void)}
-case class Rho2[chan](proc: Scope[Proc[?],chan,Rho2[Void]])
-
-object Rho2{
-  def zero[chan]: Rho2[chan] = Rho2(Scope(Zero()))
-}
 
 /*
+Concrete State Space:
 
-Abstract Interpretation:
+State := P x Env x Store
+  - states are represented as triplets
 
-@ : P x Env -> N
-  - takes a closure and returns a reference to that closure, i.e., a name.
+Val := P x Env
+  - the values sent and received are closures
 
-* : N -> P x Env
-  - evaluates a reference to retrieve a closure
+@ : P x Env -> Chan
+  - takes a closure and returns a channel
 
-Env : N -> A
-  - the contents of names. For free names, the contents of the channel. For bound names, the value bound to the name.
+* : Chan -> P x Env
+  - dereferences a channel retrieve it's closure
 
-Store : A -> N
+Env : Var -> A
+  - an environment is a finite mapping of free variables to addresses
 
-Term:
-0 : 1 -> P
-! : N x P -> P
-for : N x P -> P
-| : P x P -> P
-* : N -> P
-COMM : 1 -> P
-@ : P -> N
+Store : A -> Chan
+  - the store is a finite mapping from addresses to channels
+
+COMM : P x Env x Store -> P' x Env' x Store'
 
 */
