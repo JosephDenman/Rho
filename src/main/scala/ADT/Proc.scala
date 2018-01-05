@@ -256,25 +256,27 @@ object Scope {
 /*
 Concrete State Space:
 
+COMM : State -> State'
+
 State := P x Env x Store
   - states are represented as triplets
 
 Val := P x Env
-  - the values sent and received are closures
-
-@ : P x Env -> Chan
-  - takes a closure and returns a channel
-
-* : Chan -> P x Env
-  - dereferences a channel retrieve it's closure
-
-Env : Var -> A
-  - an environment is a finite mapping of free variables to addresses
+  - values sent and received are closures
 
 Store : A -> Chan
-  - the store is a finite mapping from addresses to channels
+  - a finite mapping from addresses to channels
 
-COMM : P x Env x Store -> P' x Env' x Store'
+Env : Var -> A
+  - a finite mapping of free variables to addresses
+
+Var := An infinite set of identifiers
+
+@ : P x Env -> Chan
+  - converts a closure into a channel
+
+* : Chan -> P x Env
+  - converts a channel into the original closure
 
 - current work focuses on refactoring the above to have the store map to
 a channel queue, where readers and writers are stored. Once that's done,
