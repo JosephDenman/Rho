@@ -45,7 +45,7 @@ case class Void(z: Void)
 
 object Void {
 
-  /**
+  /*
    * Logical reasoning of type 'ex contradictione sequitur quodlibet'
    */
 
