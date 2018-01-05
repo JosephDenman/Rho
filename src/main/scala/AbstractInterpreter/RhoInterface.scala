@@ -32,8 +32,8 @@ object Example extends App {
 trait RhoInterface[M[_],A] {
 
   val send: A => Val[A] => M[Unit]
-  val recv: A => Task[Val[A]]
-  val read: A => Task[Quote]
+  val recv: A => M[Val[A]]
+  val read: A => M[Quote]
   val bind: A => Quote => M[Unit]
   val alloc: String => M[A]
   val reduce: Val[A] => M[Val[A]]
