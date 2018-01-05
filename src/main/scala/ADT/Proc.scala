@@ -276,4 +276,9 @@ Store : A -> Chan
 
 COMM : P x Env x Store -> P' x Env' x Store'
 
+- current work focuses on refactoring the above to have the store map to
+a channel queue, where readers and writers are stored. Once that's done,
+we apply structural abstraction to derive an abstract state space, yielding
+a formal definition of an abstract analysis framework.
+
 */
