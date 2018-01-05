@@ -68,16 +68,16 @@ object RhoInterface {
           ioAddr.lookup.take
       }
 
-      /*
-       * Addresses could easily be made immutable by introducing error conditions
-       * on reassignment
-       */
-
       val read: IOAddr => Task[Quote] =
         ioAddr =>
           Task now {
             ioAddr.lookup
           }
+
+      /*
+       * Addresses could easily be made immutable by introducing error conditions
+       * on reassignment
+       */
 
       val bind: IOAddr => Quote => Task[Unit] = {
         ioAddr =>
@@ -139,9 +139,9 @@ object RhoInterface {
 
               debug(o.toString)
 
-              send(env(x))(Val(env, q)) flatMap { _ =>
+              send (env(x)) (Val(env, q)) flatMap { _ =>
 
-                reduce(Val(env, Zero()))
+                reduce (Val(env, Zero()))
 
               }
 
