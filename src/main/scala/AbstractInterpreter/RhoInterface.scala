@@ -1,7 +1,7 @@
 package AbstractInterpreter
 
 import ADT._
-import AbstractInterpreter.StateSpace.Var
+import AbstractInterpreter.StateSpace._
 import monix.eval.Task
 import monix.execution.Scheduler.Implicits.global
 
@@ -21,16 +21,10 @@ import scala.collection.immutable.HashMap
 
 object Example extends App {
 
-  val output = Output("x", Par(Zero(),Zero()))
+  val reducible = New("x",Par(Output("x",Par(Zero(),Zero())),Input("z","x",Drop("z"))))
 
-  val input = Input("z","x",Drop("z"))
-
-  val par = Par(output,input)
-
-  val reducible = New("x",par)
-
-  val result = for { future <- RhoInterface.chanStore.reduce(Val(HashMap.empty,reducible)).runAsync } yield {
-    future
+  for { future <- RhoInterface.chanStore.reduce(Val(HashMap.empty,reducible)).runAsync } yield {
+    future.env
   }
 
 }
@@ -53,7 +47,7 @@ object RhoInterface {
     new RhoInterface[Task, IOAddr] {
 
       /*
-       * Although it's not obvious at first, the functions below are store operations ( Store : A -> Val[A] ). Store
+       * The functions below are store operations ( Store : A -> Val[A] ). Store
        * interaction becomes an important part of program analysis, yet we'd prefer not to have to explicitly
        * thread it through the evaluation, so we factor the store and store interaction into the analysis monad. In this
        * case the JVM heap is the "store" and our addresses are mutable references holding channels. Simply put, when

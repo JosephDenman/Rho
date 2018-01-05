@@ -36,6 +36,7 @@ object Val {
   }
 }
 
+// Channel generation
 case class Quote(unquote: Val[IOAddr])(private val mVar: MVar[Val[IOAddr]]) extends MVar[Val[IOAddr]] {
   def put(a: Val[IOAddr]): Task[Unit] = mVar.put(a)
   def take: Task[Val[IOAddr]] = mVar.take
