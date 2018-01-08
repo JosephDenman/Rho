@@ -160,8 +160,6 @@ object Reduce {
                 proc => Clo(proc, env) :: xs
               }.toList
 
-              println(newRunQueue)
-
               reduce(
                 heap,
                 newRunQueue
