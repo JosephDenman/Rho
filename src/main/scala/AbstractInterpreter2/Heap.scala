@@ -156,9 +156,8 @@ object Reduce {
                 }
               })*/
 
-              val newRunQueue = par.processes.flatMap {
-                proc => Clo(proc, env) :: xs
-              }.toList
+              val newRunQueue =
+                par.processes.toList.map(proc => Clo(proc,env)) ++ xs
 
               reduce(
                 heap,
