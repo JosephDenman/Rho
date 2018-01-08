@@ -4,6 +4,7 @@ import ADT._
 import AbstractInterpreter.RhoInterface.debug
 import AbstractInterpreter.StateSpace.Var
 import AbstractInterpreter2.State.{Environment, Heap, RunQueue}
+import cats._
 import monix.eval.Task
 import monix.execution.Scheduler.Implicits.global
 
@@ -122,7 +123,7 @@ object Reduce {
     case writer :: ws => WriterQueue(writer,ws)
   }
 
-  val reduce: (Heap,RunQueue) => Task[(Heap,RunQueue)] = {
+  val reduce: (Heap,RunQueue) => Task[List[(Heap,RunQueue)]] = {
 
     (heap, runQueue) =>
 
@@ -132,7 +133,7 @@ object Reduce {
 
       runQueue match {
 
-        case Nil => debug("Terminated") ; Task {(heap,runQueue)} // Terminate
+        case Nil => debug("Terminated") ; Task {List((heap,runQueue))} // Terminate
 
         case Clo(proc, env) :: xs =>
 
@@ -156,13 +157,15 @@ object Reduce {
                 }
               })*/
 
-              val newRunQueue =
-                par.processes.toList.map(proc => Clo(proc,env)) ++ xs
+              val newRunQueues = {
+                par.processes.permutations.map{
+                  procs => procs.toList.map{proc => Clo(proc,env)} ++ xs
+                }.toList
+              }
 
-              reduce(
-                heap,
-                newRunQueue
-              )
+              Task.traverse(newRunQueues){
+                newRunQueue => reduce (heap, newRunQueue)
+              }.map(_.flatten)
 
             case in @ Input(z, x, k) =>
 
