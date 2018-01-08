@@ -19,7 +19,7 @@ import scala.collection.immutable.HashMap
  *
  */
 
-object Example extends App {
+object Example {
 
   val reducible = New("x",Par(Output("x",Par(Zero(),Zero())),Input("z","x",Drop("z"))))
 
@@ -212,5 +212,11 @@ object RhoInterface {
     val thread = Thread.currentThread.getName
     println(s"$now [$thread] $msg")
   }
+
+  // x!Q | for(z <- x)P | [ ... ] -> P{@Q/z} | [ ... ]
+
+  // x!Q -SEND(x,Q)-> 0
+
+  // for(z <- x)P -RECV(x,@Q)-> P{@Q/z}
 
 }

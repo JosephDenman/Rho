@@ -1,9 +1,9 @@
 package ADT
 
-import cats.{Applicative, Eval, Foldable, Functor, Traverse}
+import cats.{Eval, Foldable, Functor}
 
 // Term constructors
-trait Proc[+Chan] extends Serializable{
+trait Proc[Chan] extends Serializable{
   override def toString: String
 }
 
@@ -23,8 +23,8 @@ trait Proc[+Chan] extends Serializable{
   }
 
   // | : P x P -> P
-  case class Par[Chan](left: Proc[Chan], right: Proc[Chan]) extends Proc[Chan]{
-    override def toString: String = left.toString + " | " + right.toString
+  case class Par[Chan](processes: Proc[Chan]* ) extends Proc[Chan]{
+    override def toString: String = { processes.map(p => p.toString).mkString(" | ") }
   }
 
   // * : N -> P
@@ -90,7 +90,7 @@ object Proc {
       }
   }
 
-  implicit val traversableProc: Traverse[Proc] = new Traverse[Proc] {
+  /*implicit val traversableProc: Traverse[Proc] = new Traverse[Proc] {
 
     def traverse[G[_], A, B](proc: Proc[A])(func: A => G[B])(implicit ap: Applicative[G]): G[Proc[B]] =
       proc match {
@@ -106,7 +106,7 @@ object Proc {
 
     def foldRight[A, B](proc: Proc[A], lb: Eval[B])(f: (A, Eval[B]) => Eval[B]): Eval[B] =
       foldableProc.foldRight(proc, lb)(f)
-  }
+  }*/
 }
 
 
