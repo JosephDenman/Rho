@@ -3,7 +3,7 @@ package ADT
 import cats.{Eval, Foldable, Functor}
 
 // Term constructors
-trait Proc[Chan] extends Serializable{
+trait Proc[Chan] extends Serializable {
   override def toString: String
 }
 
