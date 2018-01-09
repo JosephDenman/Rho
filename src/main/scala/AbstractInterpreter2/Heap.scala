@@ -158,10 +158,6 @@ trait Reduce {
 
   val reduce: (Store,RunQueue) => Task[(Store,RunQueue)]
 
-  val send: Channel => Clo => Unit
-
-  val alloc: Var => Channel
-
 }
 
 object Reduce {
