@@ -28,7 +28,7 @@ sealed trait Channel
 
   case class Quote(unquote: Clo) extends Channel {
     val hash: String = Hashids(super.hashCode().toString).encode(1L)
-    override def toString: Var = "@(" + unquote.toString + ")" + ", " + "Env " + unquote.env.mkString("{ "," , "," }")
+    override def toString: Var = "@(" + unquote.toString + ")"
     override def equals(o: Any): Boolean = {
       o match {
         case that: Quote => that.hash == this.hash
@@ -63,7 +63,7 @@ sealed trait Reader
 sealed trait Writer
 
   case class Concretion(q: Quote) extends Writer{
-    override def toString: String =  q.toString
+    override def toString: String =  q.toString + ", " + "Env " + q.unquote.env.mkString("{ "," , "," }")
   }
 
 
@@ -182,23 +182,23 @@ object Reduce {
 
         case Nil =>
 
-          println("CExpr {  }")
+          println("CExpr : {  }")
 
-          println("Store " + store.mkString("{ "," , "," }"))
+          println("Store : " + store.mkString("{ "," , "," }"))
 
-          println("Kont " + runQueue.mkString("{ "," :: "," }"))
+          println("Kont : " + runQueue.mkString("{ "," :: "," }"))
 
           println("") ; println("Terminated") ; Task { List((store,runQueue)) } // Terminate
 
         case Clo(proc, env) :: xs =>
 
-          println("CExpr { " + proc.toString + " }")
+          println("CExpr : { " + proc.toString + " }")
 
-          println("Env " + env.mkString("{ "," , "," }"))
+          println("Env : " + env.mkString("{ "," , "," }"))
 
-          println("Store " + store.mkString("{ "," , "," }"))
+          println("Store : " + store.mkString("{ "," , "," }"))
 
-          println("Kont " + xs.mkString("{ "," :: "," }"))
+          println("Kont : " + xs.mkString("{ "," :: "," }"))
 
           proc match {
 
