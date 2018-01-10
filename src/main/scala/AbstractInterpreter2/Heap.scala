@@ -3,8 +3,6 @@ package AbstractInterpreter2
 import ADT._
 import AbstractInterpreter.StateSpace.Var
 import AbstractInterpreter2.State.{Environment, RunQueue, Store}
-import monix.eval.Task
-import monix.execution.Scheduler.Implicits.global
 import org.hashids.Hashids
 
 import scala.collection.immutable.HashMap
@@ -148,15 +146,15 @@ object Example extends App {
     )
   )
 
-
-  for { result <- Reduce.reduce(HashMap.empty[Channel,ChannelQueue],reducible_4).runAsync } yield {
-    result.map{x => List(x._1.mkString(" , ")).mkString("Final Store : { ",""," }")}.foreach(println)
+  for { result <- Reduce.reduce(HashMap.empty[Channel,ChannelQueue],reducible_4) } yield {
+    println("")
+    println(result._1.mkString(" , ").mkString("Final Store : { ",""," }"))
   }
 }
 
 trait Reduce {
 
-  val reduce: (Store,RunQueue) => Task[(Store,RunQueue)]
+  val reduce: (Store,RunQueue) => List[(Store,RunQueue)]
 
 }
 
@@ -172,7 +170,7 @@ object Reduce {
     case writer :: ws => WriterQueue(writer,ws)
   }
 
-  val reduce: (Store,RunQueue) => Task[List[(Store,RunQueue)]] = {
+  val reduce: (Store,RunQueue) => List[(Store,RunQueue)] = {
 
     (store, runQueue) =>
 
@@ -182,23 +180,23 @@ object Reduce {
 
         case Nil =>
 
-          println("CExpr : {  }")
+          println("P : {  }")
 
           println("Store : " + store.mkString("{ "," , "," }"))
 
-          println("Kont : " + runQueue.mkString("{ "," :: "," }"))
+          println("RunQueue : " + runQueue.mkString("{ "," :: "," }"))
 
-          println("") ; println("Terminated") ; Task { List((store,runQueue)) } // Terminate
+          println("") ; println("Terminated") ; List {(store,runQueue)}  // Terminate
 
         case Clo(proc, env) :: xs =>
 
-          println("CExpr : { " + proc.toString + " }")
+          println("P : { " + proc.toString + " }")
 
           println("Env : " + env.mkString("{ "," , "," }"))
 
           println("Store : " + store.mkString("{ "," , "," }"))
 
-          println("Kont : " + xs.mkString("{ "," :: "," }"))
+          println("RunQueue : " + xs.mkString("{ "," :: "," }"))
 
           proc match {
 
@@ -208,15 +206,13 @@ object Reduce {
 
             case par @ Par(_*) =>  // Prl
 
-              val newRunQueues = {
-                par.processes.permutations.map{
-                  procs => procs.toList.map{proc => Clo(proc,env)} ++ xs
-                }.toList
-              }
+              for { leavings <- par.processes.permutations.toList
 
-              Task.traverse(newRunQueues){
-                newRunQueue => reduce (store, newRunQueue)
-              }.map(_.flatten)
+                    newRunQ = (leavings.map { proc => Clo(proc,env) } ++ xs).toList
+
+                    newst <- reduce(store, newRunQ)
+
+              } yield { newst }
 
 
             case in @ Input(z, x, k) =>
@@ -295,7 +291,7 @@ object Reduce {
                     case Abstraction(z, k) =>
 
                         reduce(
-                          store + { chan -> readerQueue(readers) } + { message -> EmptyQueue() }, // empty channel queues are allocated when a process is quoted
+                          store + { chan -> readerQueue(readers) } + { message -> EmptyQueue() }, // empty channel queues are allocated whenever a process is quoted
                           xs :+ Clo(k, env + { z -> message })
                         )
 
@@ -304,7 +300,7 @@ object Reduce {
 
                 case EmptyQueue() =>
                     reduce(
-                      store + { chan -> WriterQueue(Concretion(message), List.empty)} + { message -> EmptyQueue() },
+                      store + {chan -> WriterQueue(Concretion(message), List.empty)} + { message -> EmptyQueue() },
                       xs
                     )
                   }
@@ -342,3 +338,43 @@ object Reduce {
       }
   }
 }
+
+// Output(Quote(Zero()),P|Q)
+
+// Quote
+
+/*
+Concrete State Space:
+
+State := Store x Kont
+  - states are represented as a store/run-queue pair
+
+Env : Var -> Chan
+  - a finite mapping of free variables to channels
+
+Store : Chan -> Queue
+  - a finite mapping from a channel to a set of possible actions on that channel
+
+Chan := @ Clo
+
+Queue := (λx.P, Env) ,..., (λx.P, Env) - queue may be a set of abstractions paired with closing environments
+       | Chan ,..., Chan - or a set of quoted closures
+
+Kont := Clo1, ..., CloN
+  - at each transition, a closure is picked off the front of the run-queue and executed
+
+Clo := P x Env
+  - where Env maintains the values of the free variables in P
+
+P,Q := 0
+     | x!Q
+     | for(z <- x)P
+     | P|Q
+     | *x
+
+Var := An infinite set of identifiers
+
+@ : Clo -> Chan
+  - converts a closure into a channel
+
+*/
