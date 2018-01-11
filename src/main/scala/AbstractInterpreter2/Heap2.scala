@@ -1,11 +1,4 @@
-/*package AbstractInterpreter2
-
-import ADT._
-import AbstractInterpreter.StateSpace.Var
-import AbstractInterpreter2.State.{Environment, RunQueue, Store}
-import org.hashids.Hashids
-
-import scala.collection.immutable.HashMap
+package AbstractInterpreter2
 
 // Names
 // @0 = Quote(Zero())
@@ -29,10 +22,10 @@ import scala.collection.immutable.HashMap
 
 // @ : Proc -> Var
 
-
+/*
 package object State {
 
-  type Environment = HashMap[Var,Channel]
+  type Environment = HashMap[Rho,Channel]
 
   type Store = HashMap[Channel,ChannelQueue]
 
@@ -60,43 +53,48 @@ package object State {
 
 // Env : Rho -> Rho
 
-case class Clo(proc: Proc[Var],env: Environment){
-  override def toString: Var = proc.toString
+case class Clo(proc: Proc[Rho], env: Environment){ // rethink env in quoting
+  override def toString: String = proc.toString
 }
 
+// {@Q/@R} := env + (@R -> @Q)
+
+// Env : Rho -> Channel
+
+// Env : Var -> Channel
 
 sealed trait Channel
 
-  case class Quote(unquote: Clo) extends Channel {
-    val hash: String = Hashids(super.hashCode().toString).encode(1L)
-    override def toString: Var = "@(" + unquote.toString + ")"
-    override def equals(o: Any): Boolean = {
-      o match {
-        case that: Quote => that.hash == this.hash
-        case _ => super.equals(o)
-      }
+case class Quote(unquote: Clo) extends Channel {
+  val hash: String = Hashids(super.hashCode().toString).encode(1L)
+  override def toString: String = "@(" + unquote.toString + ")"
+  override def equals(o: Any): Boolean = {
+    o match {
+      case that: Quote => that.hash == this.hash
+      case _ => super.equals(o)
     }
   }
+}
 
 
 sealed trait ChannelQueue
 
   case class ReaderQueue(x:(Reader,Environment), xs: List[(Reader,Environment)]) extends ChannelQueue {
-    override def toString: Var = (x :: xs).map{_._1.toString}.mkString("[", "][", "]")
+    override def toString: String = (x :: xs).map{_._1.toString}.mkString("[", "][", "]")
   }
 
   case class WriterQueue(x: Writer, xs: List[Writer]) extends ChannelQueue {
-    override def toString: Var = (x :: xs).map{_.toString}.mkString("[", "][", "]")
+    override def toString: String = (x :: xs).map{_.toString}.mkString("[", "][", "]")
   }
 
   case class EmptyQueue() extends ChannelQueue {
-    override def toString: Var = "[]"
+    override def toString: String = "[]"
   }
 
 
 sealed trait Reader
 
-  case class Abstraction(z: Var, k: Proc[Var]) extends Reader {
+  case class Abstraction(z: Rho, k: Proc[Rho]) extends Reader {
     override def toString: String = " λ" + z + " { " + k.toString + " } "
   }
 
@@ -104,92 +102,67 @@ sealed trait Reader
 sealed trait Writer
 
   case class Concretion(q: Quote) extends Writer{
-    override def toString: String =  q.toString + ", " + "Env " + q.unquote.env.mkString("{ "," , "," }")
+    override def toString: String =  " !" + " { " + q.toString + " } "
   }
 
 
 object Example extends App {
 
-  // new x in {x!(0|0) | for( z <- x ){ *z }}
+  // @0!0
+
+
   val reducible_1 = List(
-    Clo(
-      New(
-        "x",
-        Par(
-          Output(
-            "x",
-            Par(Zero(), Zero())),
-          Input("z", "x", Drop("z"))
-        )
-      ),HashMap.empty[Var,Channel]
-    )
+    Clo(Output(Rho(Zero()),Par(Zero(),Zero())),HashMap.empty[Rho,Channel])
   )
 
-  // new x in { x!(*z) | for( y <- x ){ y!(0|0) } }
+  // @0!(0|0)
+
   val reducible_2 = List(
-    Clo(
-      New(
-        "x",
-        Par(
-          Output("x", Drop("z")),
-          Input("y","x", Output("y", Par(Zero(),Zero())))
-        )
-      ), HashMap.empty[Var,Channel]
+    Clo(Output(Rho(Zero()),Par(Zero(),Zero())),HashMap.empty[Rho,Channel]
     )
   )
 
-  // new x in { x!(for(z <- x){*z}) | for( y <- x ){ *y | y!(0|0) | for(w <- y){*w}}
+  // @(0|0)!0
+
   val reducible_3 = List(
-    Clo(
-      New(
-        "x",
-        Par(
-          Output("x",Input("z","x",Drop("z"))),
-          Input("y","x",Par(Drop("y"),Output("y",Par(Zero(),Zero())),Input("w","y",Drop("w"))))
-        )
-      ), HashMap.empty[Var,Channel]
+    Clo(Output(Rho(Par(Zero(),Zero())),Zero()),HashMap.empty[Rho,Channel]
     )
   )
 
-  // new x in { new y in { x!(*y) | for( z <- x ){ z!(0|0) } } }
+  // @(0|0)!(0|0)
+
   val reducible_4 = List(
-    Clo(
-      New(
-        "x",
-        New(
-          "y",
-          Par(
-            Output("x",Drop("y")),
-            Input("z","x",Output("z",Par(Zero(),Zero())))
-          )
-        )
-      ),HashMap.empty[Var,Channel]
+    Clo(Output(Rho(Par(Zero(),Zero())),Par(Zero(),Zero())),HashMap.empty[Rho,Channel]
     )
   )
 
-  // new x in { x!(0) | for(z <- x){ *z }}} | new y in { y!(0) | for(w <- y){ *w }}}
+  // @0!(*@(0|0))
+
   val reducible_5 = List(
+    Clo(Output(Rho(Zero()),Drop(Rho(Par(Zero(),Zero())))),HashMap.empty[Rho,Channel]
+    )
+  )
+
+  // @0!(*@(0|0)) | for(@(0|0|0) <- @0){ *@(0|0|0) }
+  val reducible_6 = List(
     Clo(
       Par(
-        New(
-          "x",
-          Par(
-            Output("x",Zero()),
-            Input("z","x",Drop("z"))
-          )
+        Output(
+          Rho(Zero()),
+          Drop(Rho(Par(Zero(),Zero())))
         ),
-        New(
-          "y",
-          Par(
-            Output("y",Zero()),
-            Input("w","y",Drop("w"))
-          )
-        )
-      ),HashMap.empty[Var,Channel]
+        Input(
+          Rho(Par(Zero(),Zero(),Zero())),
+          Rho(Zero()),
+          Drop(Rho(Par(Zero(),Zero(),Zero())))
+        ),
+      ),
+        HashMap.empty[Rho,Channel]
     )
   )
 
-  for { result <- Reduce.reduce(HashMap.empty[Channel,ChannelQueue],reducible_4) } yield {
+
+  for { result <- Reduce.reduce(HashMap.empty[Channel,ChannelQueue],reducible_6) } yield {
     println("")
     println(result._1.mkString(" , ").mkString("Final Store : { ",""," }"))
   }
@@ -268,86 +241,110 @@ object Reduce {
 
                   val message = writer.q
 
-                    reduce(
-                      store + { chan -> writerQueue(writers) },
-                      Clo(k, env + { z -> message }) :: xs
-                    )
+                  reduce(
+                    store + { chan -> writerQueue(writers) },
+                    Clo(k, env + { z -> message }) :: xs
+                  )
 
                 case rs @ ReaderQueue(reader, readers) =>
 
                   val abs = Abstraction(z, k)
 
-                    reduce(
-                      store + {
-                        chan -> ReaderQueue(
-                                  reader,
-                                  readers :+ (abs, env)
-                                )
-                      },
-                      xs
-                    )
+                  reduce(
+                    store + {
+                      chan -> ReaderQueue(
+                        reader,
+                        readers :+ (abs, env)
+                      )
+                    },
+                    xs
+                  )
 
                 case EmptyQueue() =>
 
-                    reduce(
-                      store + {
-                        chan -> ReaderQueue(
-                                  (Abstraction(z, k), env),
-                                  List.empty
-                                )
-                      },
-                      xs
-                    )
+                  reduce(
+                    store + {
+                      chan -> ReaderQueue(
+                        (Abstraction(z, k), env),
+                        List.empty
+                      )
+                    },
+                    xs
+                  )
               }
-
 
             case out @ Output(x, q) =>
 
-              val chan = env(x)
+              env.get(x) match {
 
-              val message = Quote(Clo(q,env))
-
-              store(chan) match {
-
-                case WriterQueue(writer: Concretion, writers) =>
+                case Some(chan) =>
 
                   val message = Quote(Clo(q, env))
 
-                    reduce(
-                      store + {
-                        chan -> WriterQueue(
-                                  writer,
-                                  writers :+ Concretion(message)
-                                )
-                      } + {message -> EmptyQueue()},
-                      xs
-                    )
+                  store(chan) match {
 
-                case ReaderQueue(reader: (Reader, Environment), readers) =>
+                    case WriterQueue(writer: Concretion, writers) =>
 
-                  val env = reader._2
+                      val message = Quote(Clo(q, env))
 
-                  val abs = reader._1
+                      reduce(
+                        store + {
+                          chan -> WriterQueue(
+                            writer,
+                            writers :+ Concretion(message)
+                          )
+                        } + {
+                          message -> EmptyQueue()
+                        },
+                        xs
+                      )
 
-                  abs match {
+                    case ReaderQueue(reader: (Reader, Environment), readers) =>
 
-                    case Abstraction(z, k) =>
+                      val env = reader._2
 
-                        reduce(
-                          store + { chan -> readerQueue(readers) } + { message -> EmptyQueue() }, // empty channel queues are allocated whenever a process is quoted
-                          xs :+ Clo(k, env + { z -> message })
-                        )
+                      val abs = reader._1
 
-                    case _ => sys.error("Unrecognized reader")
+                      abs match {
+
+                        case Abstraction(z, k) =>
+
+                          reduce(
+                            store + {
+                              chan -> readerQueue(readers)
+                            } + {
+                              message -> EmptyQueue()
+                            }, // empty channel queues are allocated whenever a process is quoted
+                            xs :+ Clo(k, env + {
+                              z -> message
+                            })
+                          )
+
+                        case _ => sys.error("Unrecognized reader")
+                      }
+
+                    case EmptyQueue() =>
+                      reduce(
+                        store + {
+                          chan -> WriterQueue(Concretion(message), List.empty)
+                        } + {
+                          message -> EmptyQueue()
+                        },
+                        xs
+                      )
                   }
 
-                case EmptyQueue() =>
-                    reduce(
-                      store + {chan -> WriterQueue(Concretion(message), List.empty)} + { message -> EmptyQueue() },
-                      xs
-                    )
-                  }
 
+                case None =>
+
+                  val chan = Quote(Clo(x.unquote,env))
+
+                  reduce(
+                    store + {chan -> EmptyQueue()},
+                    Clo(out, env + {x -> chan}) :: xs
+                  )
+
+              }
 
             case drop @ Drop(x) =>
 
@@ -365,24 +362,37 @@ object Reduce {
                   )
 
                 case _ => sys.error("Unrecognized channel type")
-            }
+              }
 
+           /* case neu @ New(x,k) =>
 
-            case neu @ New(x,k) =>
-
-              val chan = Quote(Clo(Zero(),HashMap.empty[Var, Channel]))
+              val chan = Quote(Clo(Zero(),HashMap.empty[Rho, Channel]))
               // a non-unique name will not update correctly
               // notice that names are not only allocated here, but during variable binding.
               reduce(
                 store + {chan -> EmptyQueue()},
                 Clo(k, env + {x -> chan}) :: xs
-              )
+              ) */
           }
       }
   }
-}
+} */
 
 // Output(Quote(Zero()),P|Q)
+
+// for ( z <- x )P
+// env(x) match {
+    // case Some(name) => reduce( (P ,env + { z -> name }), queue)
+    // case None =>
+
+// Env : Rho -> Rho ==> {@Q/@R}
+
+// Env { x : Rho -> Rho, z : Rho -> Rho }
+
+// Store { Rho -> ChannelQueue, Rho -> Empty }
+
+// Store : Channel -> Queue
+// Channel := @(P x Env)
 
 // Quote
 
@@ -420,4 +430,4 @@ Var := An infinite set of identifiers
 @ : Clo -> Chan
   - converts a closure into a channel
 
-*/ */
+*/

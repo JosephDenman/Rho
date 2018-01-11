@@ -3,9 +3,6 @@ package AbstractInterpreter
 import ADT._
 import AbstractInterpreter.StateSpace._
 import monix.eval.Task
-import monix.execution.Scheduler.Implicits.global
-
-import scala.collection.immutable.HashMap
 
 /*
  * RhoInterface is generic in an analysis monad and a notion of address. The example
@@ -21,11 +18,11 @@ import scala.collection.immutable.HashMap
 
 object Example {
 
-  val reducible = New("x",Par(Output("x",Par(Zero(),Zero())),Input("z","x",Drop("z"))))
+  //val reducible = New("x",Par(Output("x",Par(Zero(),Zero())),Input("z","x",Drop("z"))))
 
-  for { future <- RhoInterface.chanStore.reduce(Val(HashMap.empty,reducible)).runAsync } yield {
-    future.env
-  }
+ // for { future <- RhoInterface.chanStore.reduce(Val(HashMap.empty,reducible)).runAsync } yield {
+   // future.env
+  //}
 
 }
 
@@ -173,7 +170,7 @@ object RhoInterface {
 
               }
 
-            case (env, neu @ New(x,p)) =>
+         /*   case (env, neu @ New(x,p)) =>
 
               debug(neu.toString)
 
@@ -199,7 +196,7 @@ object RhoInterface {
               }
 
             case (env,_) => sys.error("Unrecognized term")
-
+*/
           }
       }
     }

@@ -1,6 +1,6 @@
 package ADT
 
-import cats.{Eval, Foldable, Functor}
+import cats.{Applicative, Eval, Foldable, Functor, Traverse}
 
 // Term constructors
 trait Proc[Chan] extends Serializable {
@@ -30,12 +30,25 @@ trait Proc[Chan] extends Serializable {
   // * : N -> P
   case class Drop[Chan](x: Chan) extends Proc[Chan]{
     override def toString: String = "*" + x.toString
+    override def equals(o: Any): Boolean = o match {
+      case that @ Drop(y) => y.equals(x)
+      case _ => super.equals(o)
+    }
   }
 
   // and the one we hold on faith - New : N x P -> P
-  case class New[Chan](x: Chan, p: Proc[Chan]) extends Proc[Chan]{
+  /*case class New[Chan](x: Chan, p: Proc[Chan]) extends Proc[Chan]{
     override def toString: String = "new " + x + " in { " + p.toString + " }"
+  }*/
+
+case class Quote(unquote: Proc[Quote]){
+  override def toString: String = "@(" + unquote + ")"
+  override def equals(o: Any): Boolean = o match {
+    case that @ Quote(q) => q.equals(unquote)
+    case _ => super.equals(o)
   }
+}
+
 
 
 /*
@@ -90,7 +103,7 @@ object Proc {
       }
   }
 
-  /*implicit val traversableProc: Traverse[Proc] = new Traverse[Proc] {
+  implicit val traversableProc: Traverse[Proc] = new Traverse[Proc] {
 
     def traverse[G[_], A, B](proc: Proc[A])(func: A => G[B])(implicit ap: Applicative[G]): G[Proc[B]] =
       proc match {
@@ -98,7 +111,7 @@ object Proc {
         case Drop(x) => ap.map(func(x))(Drop[B])
         case Input(z,x,k) => ap.map3(func(z),func(x),traverse(k)(func))(Input[B])
         case Output(x, p) => ap.map2(func(x), traverse(p)(func))(Output[B])
-        case Par(proc1, proc2) => ap.map2(traverse(proc1)(func), traverse(proc2)(func))(Par[B])
+        case Par(proc1, proc2) => ap.map2(traverse(proc1)(func), traverse(proc2)(func))(Par[B](_,_))
       }
 
     def foldLeft[A, B](proc: Proc[A], b: B)(f: (B, A) => B): B =
@@ -106,7 +119,7 @@ object Proc {
 
     def foldRight[A, B](proc: Proc[A], lb: Eval[B])(f: (A, Eval[B]) => Eval[B]): Eval[B] =
       foldableProc.foldRight(proc, lb)(f)
-  }*/
+  }
 }
 
 
