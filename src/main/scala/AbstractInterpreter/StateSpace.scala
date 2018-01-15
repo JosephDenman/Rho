@@ -43,4 +43,3 @@ case class Quote(unquote: Val[IOAddr])(private val mVar: MVar[Val[IOAddr]]) exte
   def read: Task[Val[IOAddr]] = mVar.read
 }
 
-

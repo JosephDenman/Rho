@@ -3,7 +3,7 @@ package ADT
 import cats.{Applicative, Eval, Foldable, Functor, Traverse}
 
 // Term constructors
-trait Proc[Chan] extends Serializable {
+trait Proc[+Chan] extends Serializable {
   override def toString: String
 }
 
@@ -30,24 +30,12 @@ trait Proc[Chan] extends Serializable {
   // * : N -> P
   case class Drop[Chan](x: Chan) extends Proc[Chan]{
     override def toString: String = "*" + x.toString
-    override def equals(o: Any): Boolean = o match {
-      case that @ Drop(y) => y.equals(x)
-      case _ => super.equals(o)
-    }
   }
 
   // and the one we hold on faith - New : N x P -> P
-  /*case class New[Chan](x: Chan, p: Proc[Chan]) extends Proc[Chan]{
+  case class New[Chan](x: Chan, p: Proc[Chan]) extends Proc[Chan] {
     override def toString: String = "new " + x + " in { " + p.toString + " }"
-  }*/
-
-case class Quote(unquote: Proc[Quote]){
-  override def toString: String = "@(" + unquote + ")"
-  override def equals(o: Any): Boolean = o match {
-    case that @ Quote(q) => q.equals(unquote)
-    case _ => super.equals(o)
   }
-}
 
 
 
@@ -72,6 +60,7 @@ object Void {
 }
 
 object Proc {
+
   implicit val functorProc: Functor[Proc] = new Functor[Proc] {
     def map[A, B](proc: Proc[A])(func: A => B): Proc[B] =
       proc match {
