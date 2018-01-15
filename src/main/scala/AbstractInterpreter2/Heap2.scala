@@ -1,5 +1,5 @@
 package AbstractInterpreter2
-
+/*
 import ADT._
 import AbstractInterpreter2.State.{RunQueue, Store}
 import cats.data.State
@@ -539,7 +539,7 @@ object Reduce {
       }
   }
 }
-
+*/
 
 
 
@@ -567,6 +567,6 @@ object Reduce {
 
 */
 
-
+*/
 
 

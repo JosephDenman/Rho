@@ -1,10 +1,7 @@
-/*package AbstractInterpreter2
+package AbstractInterpreter2
 
 import ADT._
-import AbstractInterpreter2.Reduce.reduce
 import AbstractInterpreter2.State.{RunQueue, Store}
-import cats.data
-import cats.data.State
 
 import scala.collection.immutable.HashMap
 
@@ -190,50 +187,6 @@ object Reduce {
     case Nil => EmptyQueue()
     case writer :: ws => WriterQueue(writer,ws)
   }
-
-  val recv: Channel => State[Store,Channel] =
-
-    chan =>
-
-      data.State[Store,Channel]{ store =>
-
-        store.get(chan) match {
-
-          case Some(queue) =>
-
-            queue match {
-
-              case WriterQueue(writer: Concretion, writers) =>
-
-                reduce(
-                  store + {queue -> writerQueue(writers)},
-                  bind(z)(writer.q)(k) :: xs
-                )
-
-              case ReaderQueue(reader, readers) =>
-
-                reduce(
-                  store + {n -> readerQueue((reader :: readers) :+ abs)},
-                  xs
-                )
-
-              case EmptyQueue() =>
-
-                reduce(
-                  store + {n -> readerQueue(List(abs))},
-                  xs
-                )
-            }
-
-          case None =>
-
-            reduce(
-              store + {n -> EmptyQueue()},
-              in :: xs
-            )
-          }
-        }
-
 
   val reduce: (Store,RunQueue) => List[(Store,RunQueue)] = {
 
@@ -547,7 +500,7 @@ object Reduce {
          | *x
 
 */
-*/
+
 
 
 
