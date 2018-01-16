@@ -162,54 +162,70 @@ sealed trait Writer
     override def toString: String =  " !" + q.toString + " "
   }
 
-case class MachineState (
-  val store: Store,
-  val runQueue: RunQueue
-)
 
-case class ReduceM[Return](
-  val reduce: MachineState => List[(Return, MachineState, List[MachineState])]
-) {
-  def map[B](f: Return => B): ReduceM[B] = ReduceM[B](
-    st0 => for ((ret,st1,log) <- this.reduce(st0)) yield {(f(ret),st1,log)}
-    )
-  def flatMap[B](f: Return => ReduceM[B]): ReduceM[B] = ReduceM[B](
-    st0 => for(
-      (a, st1, log0) <- this.reduce(st0);
-      (b, st2, log1) <- f(a).reduce(st1)
-    ) yield {
-      (b, st2, log0 ++ log1)
-    }
-  )
-  def withFilter(pred: Return => Boolean) = ReduceM[Return](
+case class MachineState(store: Store, runQueue: RunQueue)
+
+case class ReduceM[A](reduce: MachineState => List[(A, MachineState, List[MachineState])]) {
+
+  def map[B](f: A => B): ReduceM[B] = ReduceM {
+    st0 =>
+      for { (ret, st1, log) <- reduce(st0) } yield {
+        (f(ret), st1, log)
+      }
+  }
+
+  def flatMap[B](f: A => ReduceM[B]): ReduceM[B] = ReduceM {
+    st0 =>
+      for { (a, st1, log0) <- reduce(st0)
+            (b, st2, log1) <- f(a).reduce(st1) } yield {
+        (b, st2, log0 ++ log1)
+      }
+  }
+
+  def withFilter(pred: A => Boolean) = ReduceM {
     st => for (triple <- this.reduce(st); if pred(triple._1)) yield {triple}
-  )
-  def listen: ReduceM[(Return,List[MachineState])] = ReduceM(
+  }
+
+  def listen: ReduceM[(A,List[MachineState])] = ReduceM(
     st0 => for ((ret,st1,log) <- this.reduce(st0)) yield {((ret,log),st1,log)}
     )
 }
 
 object ReduceM {
+
   def fromList[Return]: List[Return] => ReduceM[Return] =
     rets => ReduceM(st => rets.map(ret => (ret,st,List())))
+
   def state[Return]: (MachineState => (Return, MachineState)) => ReduceM[Return] =
     f => ReduceM(st0 => f(st0) match {case (ret, st1) => List((ret,st1,Nil))})
+
   val getState: ReduceM[MachineState] = state(st => (st,st))
+
   val putState: MachineState => ReduceM[Unit] = st => state(st0 => ((),st))
+
   val getStore: ReduceM[Store] = state(st => (st.store,st))
+
   val putStore: Store => ReduceM[Unit] =
     str => state(st0 =>((),MachineState(str,st0.runQueue)))
+
   val getRunQueue: ReduceM[RunQueue] = state(st => (st.runQueue,st))
+
   val putRunQueue: RunQueue => ReduceM[Unit] =
     rq => state(st0 =>((),MachineState(st0.store,rq)))
+
   def writer[Return]: (Return, List[MachineState]) => ReduceM[Return] =
     (ret,log) => ReduceM[Return](st0 => List((ret,st0,log)))
+
   val tell: List[MachineState] => ReduceM[Unit] = log => writer((),log)
+
   implicit val reduceInstances: Monad[ReduceM] = new Monad[ReduceM]{
+
     def pure[Return](ret: Return) = ReduceM[Return](
       st => List((ret,st,Nil))
     )
+
     def flatMap[A,B](ma: ReduceM[A])(f: A => ReduceM[B]) = ma.flatMap(f)
+
     def tailRecM[A,B](a: A)(f: A => ReduceM[Either[A,B]]): ReduceM[B] = ???
   }
 }
