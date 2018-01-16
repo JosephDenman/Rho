@@ -3,8 +3,6 @@ package AbstractInterpreter2
 import ADT._
 import AbstractInterpreter2.State.{RunQueue, Store}
 
-import cats._
-
 import scala.collection.immutable.HashMap
 
 package object State {
@@ -162,49 +160,105 @@ sealed trait Writer
     override def toString: String =  " !" + q.toString + " "
   }
 
-case class MachineState (
-  val store: Store,
-  val runQueue: RunQueue
-)
 
-case class ReduceM[Return](
-  val reduce: MachineState => List[(Return, MachineState, List[MachineState])]
-) {
-  def map[B](f: Return => B): ReduceM[B] = ReduceM[B](
-    st0 => for ((ret,st1,log) <- this.reduce(st0)) yield {(f(ret),st1,log)}
-    )
-  def flatMap[B](f: Return => ReduceM[B]): ReduceM[B] = ReduceM[B](
-    st0 => for(
-      (a, st1, log0) <- this.reduce(st0);
-      (b, st2, log1) <- f(a).reduce(st1)
-    ) yield {
-      (b, st2, log0 ++ log1)
+case class MachineState(store: Store, runQueue: RunQueue)
+
+case class ReduceM[A](reduce: MachineState => List[(A, MachineState, List[MachineState])]) {
+
+  def map[B](f: A => B): ReduceM[B] = ReduceM {
+    st0 =>
+      for { (ret, st1, log) <- reduce(st0) } yield {
+        (f(ret), st1, log)
+      }
+  }
+
+  def flatMap[B](f: A => ReduceM[B]): ReduceM[B] = ReduceM {
+    st0 =>
+      for { (a, st1, log0) <- reduce(st0)
+            (b, st2, log1) <- f(a).reduce(st1) } yield {
+        (b, st2, log0 ++ log1)
+      }
+  }
+
+  def withFilter(pred: A => Boolean): ReduceM[A] = ReduceM {
+    st =>
+      for { triple <- reduce(st) ; if pred(triple._1) } yield {
+      triple
     }
-  )
-  def withFilter(pred: Return => Boolean) = ReduceM[Return](
-    st => for (triple <- this.reduce(st); if pred(triple._1)) yield {triple}
-  )
+  }
 }
 
 object ReduceM {
+
   def state[Return]: (MachineState => (Return, MachineState)) => ReduceM[Return] = ???
-  val getState: ReduceM[MachineState] = ???
-  val putState: MachineState => ReduceM[Unit] = ???
-  val getStore: ReduceM[Store] = ???
-  val putStore: Store => ReduceM[Unit] = ???
-  val getRunQueue: ReduceM[RunQueue] = ???
-  val putRunQueue: RunQueue => ReduceM[Unit] = ???
+
+  val getState: ReduceM[MachineState] =
+    ReduceM {
+      st =>
+        List{
+          (st, st, List{st})
+        }
+    }
+
+  val putState: MachineState => ReduceM[Unit] =
+    st0 =>
+      ReduceM {
+        st1 =>
+          List{
+            ((), st1, List{st1})
+          }
+      }
+
+  val getStore: ReduceM[Store] =
+    ReduceM {
+      st =>
+        List{
+          (st.store, st, List{st})
+        }
+    }
+
+  val putStore: Store => ReduceM[Unit] =
+    store =>
+      ReduceM {
+        st0 =>
+          val st1 = MachineState(store,st0.runQueue)
+          List{
+            ((), st1, List{st1})
+          }
+      }
+
+  val getRunQueue: ReduceM[RunQueue] =
+    ReduceM {
+      st =>
+        List{
+          (st.runQueue, st, List{st})
+        }
+    }
+
+
+  val putRunQueue: RunQueue => ReduceM[Unit] =
+    runQ =>
+      ReduceM {
+        st0 =>
+          val st1 = MachineState(st0.store,runQ)
+          List{
+            ((), st1, List{st1})
+          }
+      }
+
   def writer[Return]: (Return, List[MachineState]) => ReduceM[Return] = ???
+
   val tell: List[MachineState] => ReduceM[Unit] = ???
+
   def listen[Return]: ReduceM[Return] => ReduceM[(Return,List[MachineState])] = ???
-  implicit val reduceInstances: Monad[ReduceM] = new Monad[ReduceM]{
-    def withFilter[Return](q: Return => Boolean): ReduceM[Return] = ???
-    def pure[Return](ret: Return) = ReduceM[Return](
-      st => List((ret,st,Nil))
-    )
-    def flatMap[A,B](ma: ReduceM[A])(f: A => ReduceM[B]) = ma.flatMap(f)
-    def tailRecM[A,B](a: A)(f: A => ReduceM[Either[A,B]]): ReduceM[B] = ???
-  }
+
+  def withFilter[A](ma: ReduceM[A])(q: A => Boolean): ReduceM[A] = ma.withFilter(q)
+
+  def pure[A](ret: A): ReduceM[A] = ReduceM { st => List { (ret, st, Nil) } }
+
+  def flatMap[A,B](ma: ReduceM[A])(f: A => ReduceM[B]): ReduceM[B] = ma.flatMap(f)
+
+  def tailRecM[A,B](a: A)(f: A => ReduceM[Either[A,B]]): ReduceM[B] = ???
 }
 
 trait Reduce {
@@ -235,10 +289,12 @@ object Reduce {
   }
 
   val reduceM: ReduceM[MachineState] = {
-    for (
-      st @ MachineState(store, runQueue) <- ReduceM.getState;
-      _ <- ReduceM.tell(List(st))
-      ) yield {
+
+    for { st @ MachineState(store, runQueue) <- ReduceM.getState
+
+          _ <- ReduceM.tell(List(st))
+
+    } yield {
         runQueue match {
           case Nil => st
           case _ => sys.error("unimplemented")
