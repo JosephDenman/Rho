@@ -184,21 +184,28 @@ case class ReduceM[Return](
   def withFilter(pred: Return => Boolean) = ReduceM[Return](
     st => for (triple <- this.reduce(st); if pred(triple._1)) yield {triple}
   )
+  def listen: ReduceM[(Return,List[MachineState])] = ReduceM(
+    st0 => for ((ret,st1,log) <- this.reduce(st0)) yield {((ret,log),st1,log)}
+    )
 }
 
 object ReduceM {
-  def state[Return]: (MachineState => (Return, MachineState)) => ReduceM[Return] = ???
-  val getState: ReduceM[MachineState] = ???
-  val putState: MachineState => ReduceM[Unit] = ???
-  val getStore: ReduceM[Store] = ???
-  val putStore: Store => ReduceM[Unit] = ???
-  val getRunQueue: ReduceM[RunQueue] = ???
-  val putRunQueue: RunQueue => ReduceM[Unit] = ???
-  def writer[Return]: (Return, List[MachineState]) => ReduceM[Return] = ???
-  val tell: List[MachineState] => ReduceM[Unit] = ???
-  def listen[Return]: ReduceM[Return] => ReduceM[(Return,List[MachineState])] = ???
+  def fromList[Return]: List[Return] => ReduceM[Return] =
+    rets => ReduceM(st => rets.map(ret => (ret,st,List())))
+  def state[Return]: (MachineState => (Return, MachineState)) => ReduceM[Return] =
+    f => ReduceM(st0 => f(st0) match {case (ret, st1) => List((ret,st1,Nil))})
+  val getState: ReduceM[MachineState] = state(st => (st,st))
+  val putState: MachineState => ReduceM[Unit] = st => state(st0 => ((),st))
+  val getStore: ReduceM[Store] = state(st => (st.store,st))
+  val putStore: Store => ReduceM[Unit] =
+    str => state(st0 =>((),MachineState(str,st0.runQueue)))
+  val getRunQueue: ReduceM[RunQueue] = state(st => (st.runQueue,st))
+  val putRunQueue: RunQueue => ReduceM[Unit] =
+    rq => state(st0 =>((),MachineState(st0.store,rq)))
+  def writer[Return]: (Return, List[MachineState]) => ReduceM[Return] =
+    (ret,log) => ReduceM[Return](st0 => List((ret,st0,log)))
+  val tell: List[MachineState] => ReduceM[Unit] = log => writer((),log)
   implicit val reduceInstances: Monad[ReduceM] = new Monad[ReduceM]{
-    def withFilter[Return](q: Return => Boolean): ReduceM[Return] = ???
     def pure[Return](ret: Return) = ReduceM[Return](
       st => List((ret,st,Nil))
     )
@@ -234,17 +241,30 @@ object Reduce {
     case writer :: ws => WriterQueue(writer,ws)
   }
 
-  val reduceM: ReduceM[MachineState] = {
+  val reduceM: ReduceM[Unit] = {
     for (
       st @ MachineState(store, runQueue) <- ReduceM.getState;
-      _ <- ReduceM.tell(List(st))
-      ) yield {
-        runQueue match {
-          case Nil => st
-          case _ => sys.error("unimplemented")
+      _ <- ReduceM.tell(List(st));
+      _ <- runQueue match {
+        case Nil => ReduceM.reduceInstances.pure(())
+        case proc :: procs => {
+          proc match {
+            case par @ Par(_*) => {
+              for (
+                interleaving <- ReduceM.fromList(
+                  par.processes.permutations.toList
+                  );
+                newRunQueue = (interleaving ++ procs).toList;
+                _ <- ReduceM.putRunQueue(newRunQueue);
+                _ <- reduceM
+              ) yield {()}
+            }
+            case _ => ???
           }
         }
       }
+      ) yield {()}
+  }
 
   //     runQueue match {
 
