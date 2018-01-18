@@ -19,14 +19,13 @@ import scala.collection.immutable.HashMap
  *
  */
 
-object Example  {
+object Example extends App {
 
   val reducible = New("x",Par(Output("x",Par(Zero(),Zero())),Input("z","x",Drop("z"))))
 
  for { future <- RhoInterface.taskStore.reduce(Val(HashMap.empty,reducible)).runAsync } yield {
    future.env
  }
-
 }
 
 trait RhoInterface[M[_],A] {
