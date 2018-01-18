@@ -205,12 +205,6 @@ object RhoInterface {
     }
   }
 
-//  implicit def stateStore: RhoInterface[State,IOAddr] = new RhoInterface[State,IOAddr] {
-
-
-
-
-
   def debug(msg: String): Unit = {
     val now = java.time.format.DateTimeFormatter.ISO_INSTANT
       .format(java.time.Instant.now)
@@ -218,11 +212,4 @@ object RhoInterface {
     val thread = Thread.currentThread.getName
     println(s"$now [$thread] $msg")
   }
-
-  // x!Q | for(z <- x)P | [ ... ] -> P{@Q/z} | [ ... ]
-
-  // x!Q -SEND(x,Q)-> 0
-
-  // for(z <- x)P -RECV(x,@Q)-> P{@Q/z}
-
 }
