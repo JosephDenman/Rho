@@ -8,32 +8,32 @@ trait Proc[+Chan] extends Serializable {
 }
 
   // 0 : 1 -> P
-  case class Zero[Chan]() extends Proc[Chan]{
+  case class Zero[+Chan]() extends Proc[Chan]{
     override def toString: String = "0"
   }
 
   // ! : N x P -> P
-  case class Output[Chan](x: Chan, q: Proc[Chan]) extends Proc[Chan]{
+  case class Output[+Chan](x: Chan, q: Proc[Chan]) extends Proc[Chan]{
     override def toString: String = x.toString + "!(" + q.toString + ")"
   }
 
   // for : N x N x P -> P
-  case class Input[Chan](z: Chan, x: Chan, k: Proc[Chan]) extends Proc[Chan]{
+  case class Input[+Chan](z: Chan, x: Chan, k: Proc[Chan]) extends Proc[Chan]{
     override def toString: String = "for( " + z.toString + " <- " + x.toString + " ){ " + k.toString + " }"
   }
 
   // | : P x P -> P
-  case class Par[Chan](processes: Proc[Chan]* ) extends Proc[Chan]{
+  case class Par[+Chan](processes: Proc[Chan]* ) extends Proc[Chan]{
     override def toString: String = { processes.map(p => p.toString).mkString(" | ") }
   }
 
   // * : N -> P
-  case class Drop[Chan](x: Chan) extends Proc[Chan]{
+  case class Drop[+Chan](x: Chan) extends Proc[Chan]{
     override def toString: String = "*" + x.toString
   }
 
   // and the one we hold on faith - New : N x P -> P
-  case class New[Chan](x: Chan, p: Proc[Chan]) extends Proc[Chan] {
+  case class New[+Chan](x: Chan, p: Proc[Chan]) extends Proc[Chan] {
     override def toString: String = "new " + x + " in { " + p.toString + " }"
   }
 
@@ -66,9 +66,12 @@ object Proc {
       proc match {
         case Zero() => Zero()
         case Drop(x) => Drop(func(x))
-        case Input(z,x,k) => Input(func(z),func(z),map(k)(func))
+        case Input(z,x,k) => Input(func(z),func(x),map(k)(func))
         case Output(x, p) => Output(func(x), map(p)(func))
-        case Par(proc1, proc2) => Par(map(proc1)(func), map(proc2)(func))
+        case Par(xs@_*) =>
+          val newXs = xs map { p => map(p)(func) }
+          Par(newXs: _*)
+        case New(x,proc1) => New(func(x), map(proc1)(func))
       }
   }
 

@@ -1,11 +1,12 @@
 package AbstractInterpreter2
 
 import ADT._
-import AbstractInterpreter2.State.{RunQueue, Store}
+import AbstractInterpreter2.Alias.{RunQueue, Store}
+import cats._
 
 import scala.collection.immutable.HashMap
 
-package object State {
+package object Alias {
 
   type Store = HashMap[Channel,ChannelQueue]
 
@@ -87,6 +88,11 @@ object Example extends App {
           Var("z"),
           Var("x"),
           Drop(Var("z"))
+        ),
+        Input(
+          Var("u"),
+          Var("x"),
+          Drop(Var("u"))
         )
       )
     )
@@ -109,19 +115,37 @@ object Example extends App {
     )
   )
 
-  for { _ <- ReduceM.putState(MachineState(HashMap.empty[Channel, ChannelQueue], List(Zero())))
+  // new x in { @(0|0)!*x | for(z <- @0){ new y in { z!(y!(0)) | for(v <- y){ *v } | for(q <- z){ *q }}}}
 
-        st = Reduce.reduceM
+  val reducible_11 = List(
+    New[Channel](
+     Var("x"),
+      Par(
+        Output(Quote(Par(Zero(),Zero())),Drop(Var("x"))),
+        Input(
+          Var("z"),
+          Quote(Par(Zero(),Zero())),
+          New(
+            Var("y"),
+            Par(
+              Output(Var("z"),Output(Var("y"),Zero())),
+              Input(Var("v"),Var("y"),Drop(Var("v"))),
+              Input(Var("q"),Var("z"),Drop(Var("q")))
+            )
+          )
+        )
+      )
+    )
+  )
 
-  } yield {
-    println(st)
-  }
+  println(reducible_11)
+
+  val result = RhoInterface.reduceM.reduce(MachineState(HashMap.empty[Channel, ChannelQueue], reducible_11))
+
+  println(result.map{triple => triple._3.mkString("\n")}.mkString("\n" + "Terminated" + "\n" + "\n"))
 }
 
 sealed trait Channel
-
-  //*@P = P ==> Drop(Quote(P)) = P
-  //@*N = N ==> Quote(Drop(N)) = N
 
   case class Quote(unquote: Proc[Channel]) extends Channel {
     override def toString: String = "@(" + unquote + ")"
@@ -161,147 +185,163 @@ sealed trait Writer
   }
 
 
-case class MachineState(store: Store, runQueue: RunQueue)
+case class MachineState(store: Store, runQueue: RunQueue){
+  override def toString: String = "Queue: " + runQueue.mkString(" | ") + "\n" + "Store: " + store.mkString("{ ",", "," }") + "\n"
+}
 
-case class ReduceM[A](reduce: MachineState => List[(A, MachineState, List[MachineState])]) {
 
-  def map[B](f: A => B): ReduceM[B] = ReduceM {
-    st0 =>
-      for { (ret, st1, log) <- reduce(st0) } yield {
-        (f(ret), st1, log)
-      }
-  }
+case class ReduceM[S,A](reduce: S => List[(A, S, List[S])]) {
 
-  def flatMap[B](f: A => ReduceM[B]): ReduceM[B] = ReduceM {
-    st0 =>
-      for { (a, st1, log0) <- reduce(st0)
-            (b, st2, log1) <- f(a).reduce(st1) } yield {
-        (b, st2, log0 ++ log1)
-      }
-  }
-
-  def withFilter(pred: A => Boolean): ReduceM[A] = ReduceM {
+  def withFilter(pred: A => Boolean): ReduceM[S,A] = ReduceM {
     state =>
-      for {triple <- reduce(state) ; if pred(triple._1)} yield triple
+      for { triple <- reduce(state) ; if pred(triple._1) } yield triple
   }
 
-  def listen: ReduceM[(A,List[MachineState])] = ReduceM {
+  def map[B](f: A => B): ReduceM[S,B] = ReduceM {
     state0 =>
-      for {(ret, state1, log) <- reduce(state0)} yield {
-       ((ret, log), state1, log)
+      for { (ret,st1,log) <- reduce(state0) } yield {
+        (f(ret),st1,log)
+      }
+  }
+
+  def flatMap[B](f: A => ReduceM[S, B]): ReduceM[S, B] = ReduceM {
+    state0 =>
+      for { (a, state1, log0) <- reduce(state0)
+            (b, state2, log1) <- f(a).reduce(state1) } yield {
+        (b, state2, log0 ++ log1)
       }
   }
 }
 
 object ReduceM {
 
-  val getState: ReduceM[MachineState] =
-    state {
-      st => (st,st)
-    }
-
-  val putState: MachineState => ReduceM[Unit] =
-    state1 =>
-      state {
-        state0 => ((),state1)
-      }
-
-  val getStore: ReduceM[Store] =
-    state {
-      state => (state.store,state)
-    }
-
-  val putStore: Store => ReduceM[Unit] =
-    store =>
-      state {
-        state0 => ((), MachineState(store, state0.runQueue))
-      }
-
-  val getRunQueue: ReduceM[RunQueue] =
-    state {
-      st => (st.runQueue,st)
-    }
-
-  val putRunQueue: RunQueue => ReduceM[Unit] =
-    runQ =>
-      state {
-        state0 => ((), MachineState(state0.store,runQ))
-      }
-
-  val tell: List[MachineState] => ReduceM[Unit] =
-    log =>
-      writer((),log)
-
-  def fromList[A](xs: List[A]): ReduceM[A] = ReduceM {
-    state =>
-      xs map { xs => (xs, state, List()) }
+  def get[S]: ReduceM[S, S] = {
+    state { st => (st, st) }
   }
 
-  def state[A](f: MachineState => (A, MachineState)): ReduceM[A] = ReduceM {
+  def put[S]: S => ReduceM[S, Unit] = {
+    state1 =>
+      state { state0 => ((), state1) }
+  }
+
+  def tell[S]: List[S] => ReduceM[S, Unit] =
+    log =>
+      writer((), log)
+
+
+  def listen[S, A](ma: ReduceM[S, A]): ReduceM[S, (A, List[S])] = ReduceM {
+    state0 =>
+      for {(ret, state1, log) <- ma.reduce(state0)} yield {
+        ((ret, log), state1, log)
+      }
+  }
+
+  def fromList[S, A](xs: List[A]): ReduceM[S, A] = ReduceM {
+    state =>
+      xs map { x => (x, state, List()) }
+  }
+
+  def writer[S, A](entry: (A, List[S])): ReduceM[S, A] = ReduceM {
+    state =>
+      List {
+        (entry._1, state, entry._2)
+      }
+  }
+
+  def state[S, A](f: S => (A, S)): ReduceM[S, A] = ReduceM {
     state0 =>
       f(state0) match {
-        case (ret, state1) => List {(ret, state1, Nil)}
+        case (ret, state1) => List {
+          (ret, state1, Nil)
+        }
       }
   }
 
-  def pure[A](ret: A): ReduceM[A] = ReduceM {
-    st =>
-      List {(ret, st, Nil)}
+  implicit def reduceMonad[S]: Monad[ReduceM[S, ?]] = {
+
+    new Monad[ReduceM[S, ?]] {
+
+      def pure[A](x: A): ReduceM[S, A] = ReduceM {
+        state =>
+          List {(x, state, Nil)}
+      }
+
+      def flatMap[A, B](ma: ReduceM[S, A])(f: A => ReduceM[S, B]): ReduceM[S, B] = ma.flatMap(f)
+
+      def tailRecM[A, B](a: A)(f: A => ReduceM[S, Either[A, B]]): ReduceM[S, B] = {
+        def go(e: Either[A, B]): ReduceM[S, B] = e match {
+          case Left(a1) => tailRecM(a1)(f)
+          case Right(b) => pure[B](b)
+        }
+        f(a).flatMap(go)
+      }
+    }
   }
-
-  def flatMap[A,B](ma: ReduceM[A])(f: A => ReduceM[B]): ReduceM[B] = ma.flatMap(f)
-
-  def writer[A](entry: (A, List[MachineState])): ReduceM[A] = ReduceM {
-    state =>
-      List {(entry._1, state, entry._2)}
-  }
-
 }
 
-object Reduce {
+
+object RhoInterface {
+
+
+  val getStore: ReduceM[MachineState, Store] =
+    ReduceM.state { st => (st.store, st) }
+
+
+  val putStore: Store => ReduceM[MachineState, Unit] =
+    store =>
+      ReduceM.state { st0 => ((), MachineState(store, st0.runQueue)) }
+
+
+  val getRunQueue: ReduceM[MachineState, RunQueue] =
+    ReduceM.state { st => (st.runQueue, st) }
+
+
+  val putRunQueue: RunQueue => ReduceM[MachineState, Unit] =
+    runQ =>
+      ReduceM.state { st0 => ((), MachineState(st0.store, runQ)) }
+
+
+  val cancel: Channel => Channel = {
+    case Quote(Drop(n)) => n
+    case chan => chan
+  }
+
 
   val bind: Channel => Channel => Proc[Channel] => Proc[Channel] =
-    z =>
-      x =>
+    chan0 =>
+      chan1 =>
         proc =>
-          Proc.functorProc.map(proc) { name =>
-            if (name == z) x
+          Proc.functorProc.map[Channel,Channel](proc) { name =>
+            if (name.equals(chan0)) cancel(chan1)
             else name
           }
 
 
-  val write: Channel => ChannelQueue => ReduceM[Store] =
+  val write: Channel => ChannelQueue => ReduceM[MachineState, Unit] =
     chan =>
       chanQ =>
-        for {store <- ReduceM.getStore
-             _ <- ReduceM.putStore(store + {
+        for {store <- getStore
+             _ <- putStore(store + {
                chan -> chanQ
              })
-             store_ <- ReduceM.getStore
-        } yield store_
+        } yield ()
 
 
-  val alloc: Channel => ReduceM[ChannelQueue] =
+  val alloc: Channel => ReduceM[MachineState, ChannelQueue] = {
     chan =>
-      for {e <- ReduceM.pure(EmptyQueue())
-           _ <- write(chan)(e)
-      } yield e
+      val e = EmptyQueue()
+      for {_ <- write(chan)(e)} yield e
+  }
 
 
-  val read: Channel => ReduceM[ChannelQueue] =
+  val read: Channel => ReduceM[MachineState, ChannelQueue] =
     chan =>
-      for {store <- ReduceM.getStore
-           queue <- store.get(chan) match {
-             case Some(rho) => ReduceM.pure(rho)
+      for {store <- getStore
+           chanQ1 <- store.get(chan) match {
+             case Some(chanQ0) => ReduceM.reduceMonad[MachineState].pure(chanQ0)
              case None => alloc(chan)
            }
-      } yield queue
-
-
-  val normalize: Channel => Channel = {
-    case Quote(Drop(n)) => normalize(n)
-    case chan => chan
-  }
+      } yield chanQ1
 
 
   val readerQueue: List[Reader] => ChannelQueue = {
@@ -316,126 +356,106 @@ object Reduce {
   }
 
 
-  val reduceM: ReduceM[Unit] = {
+  val reduceM: ReduceM[MachineState, Unit] = {
 
-    println("Started")
+    for {runQueue <- getRunQueue
 
-    for {st@MachineState(store, runQueue) <- ReduceM.getState
+         _ <- runQueue match {
 
-         _ <- ReduceM.tell(List(st))
+           case Nil =>
 
-         _ = runQueue match {
+             for {st <- ReduceM.get[MachineState]
 
-           case Nil => st
+                  _ <- ReduceM.tell(List(st))} yield ()
 
            case proc :: xs =>
 
-             proc match {
+             for {_ <- proc match {
 
-               case zero@Zero() =>
+               case Zero() =>
 
-                 for {_ <- ReduceM.putRunQueue(xs)
+                 for {st <- ReduceM.get[MachineState]
 
-                      st_ <- reduceM
+                      _ <- ReduceM.tell(List(st))
+
+                      _ <- putRunQueue(xs)
 
                  } yield ()
 
-               case _ => sys.error("Undefined term")
 
-             }
-
-         }
-
-    } yield ()
-  }
-}
-
-/*
                case par@Par(_*) =>
 
                  for {interleaving <- ReduceM.fromList(par.processes.permutations.toList)
 
                       newRunQueue = (interleaving ++ xs).toList
 
-                      _ <- ReduceM.putRunQueue(newRunQueue)
+                      _ <- putRunQueue(newRunQueue)
 
-                      _ <- reduceM
-
-                 } yield {
-                   ()
-                 }
+                 } yield ()
 
 
-               case in@Input(z, x, k) =>
+               case Input(z, x, k) =>
 
                  val abs = Abstraction(z, k)
 
-                 for {chanQ <- read(x)
+                 for {st <- ReduceM.get[MachineState]
+
+                      _ <- ReduceM.tell(List(st))
+
+                      chanQ <- read(x)
 
                       _ <- chanQ match {
 
                         case WriterQueue(writer: Concretion, writers) =>
 
-                          for {newStore <- write(x)(writerQueue(writers))
+                          for {_ <- write(x)(writerQueue(writers))
 
-                               _ <- ReduceM.putState(MachineState(newStore, bind(z)(writer.q)(k) :: xs))
+                               _ <- putRunQueue(bind(z)(writer.q)(k) :: xs)
 
-                               _ <- reduceM
-
-                          } yield {
-                            ()
-                          }
+                          } yield ()
 
                         case ReaderQueue(reader, readers) =>
 
-                          for {newStore <- write(x)(readerQueue((reader :: readers) :+ abs))
+                          for {_ <- write(x)(readerQueue((reader :: readers) :+ abs))
 
-                               _ <- ReduceM.putState(MachineState(newStore, xs))
+                               _ <- putRunQueue(xs)
 
-                               _ <- reduceM
-
-                          } yield {
-                            ()
-                          }
+                          } yield ()
 
                         case EmptyQueue() =>
 
-                          for {newStore <- write(x)(readerQueue(List(abs)))
+                          for {_ <- write(x)(readerQueue(List(abs)))
 
-                               _ <- ReduceM.putState(MachineState(newStore, xs))
+                               newStore <- getStore
 
-                               _ <- reduceM
+                               _ <- ReduceM.put(MachineState(newStore, xs))
 
-                          } yield {
-                            ()
-                          }
+                          } yield ()
                       }
+                 } yield ()
 
-                 } yield {
-                   ()
-                 }
 
-               case out@Output(x, q) =>
+               case Output(x, q) =>
 
                  val atQ = Quote(q)
 
-                 for {chanQ <- read(x)
+                 for {st <- ReduceM.get[MachineState]
+
+                      _ <- ReduceM.tell(List(st))
+
+                      chanQ <- read(x)
 
                       _ <- chanQ match {
 
                         case WriterQueue(writer: Concretion, writers) =>
 
-                          for {_ <- alloc(atQ) // is it necessary to allocate this channel?
+                          for {_ <- write(x)(writerQueue((writer :: writers) :+ Concretion(atQ)))
 
-                               newStore <- write(x)(writerQueue((writer :: writers) :+ Concretion(atQ)))
+                               newStore <- getStore
 
-                               _ <- ReduceM.putState(MachineState(newStore, xs))
+                               _ <- ReduceM.put(MachineState(newStore, xs))
 
-                               _ <- reduceM
-
-                          } yield {
-                            ()
-                          }
+                          } yield ()
 
                         case ReaderQueue(reader, readers) =>
 
@@ -443,407 +463,66 @@ object Reduce {
 
                             case Abstraction(z, k) =>
 
-                              for {_ <- alloc(atQ)
+                              for {_ <- write(x)(readerQueue(readers))
 
-                                   newStore <- write(x)(readerQueue(readers))
+                                   newStore <- getStore
 
-                                   _ <- ReduceM.putState(MachineState(newStore, xs :+ bind(z)(atQ)(k)))
+                                   _ <- ReduceM.put(MachineState(newStore, xs :+ bind(z)(atQ)(k)))
 
-                              } yield {
-                                ()
-                              }
+                              } yield ()
                           }
 
                         case EmptyQueue() =>
 
-                          for {_ <- alloc(atQ)
+                          for {_ <- write(x)(writerQueue(List(Concretion(atQ))))
 
-                               newStore <- write(x)(writerQueue(List(Concretion(atQ))))
+                               newStore <- getStore
 
-                               _ <- ReduceM.putState(MachineState(newStore, xs))
+                               _ <- ReduceM.put(MachineState(newStore, xs))
 
-                          } yield {
-                            ()
-                          }
-
+                          } yield ()
                       }
+                 } yield ()
 
-                 } yield {
-                   ()
-                 }
 
-               case drop@Drop(x) =>
+               case Drop(x) =>
 
                  x match {
 
                    case Quote(p) =>
 
-                     for {_ <- ReduceM.putRunQueue(p :: xs)
+                     for {st <- ReduceM.get[MachineState]
 
-                          _ <- reduceM
+                          _ <- ReduceM.tell(List(st))
 
-                     } yield {
-                       ()
-                     }
+                          _ <- putRunQueue(p :: xs)} yield ()
 
-                   case v@Var(id) => sys.error(s"Variable $v cannot be de-referenced")
+                   case v@Var(_) => sys.error(s"Variable $v cannot be de-referenced")
                  }
 
-               case neu@New(x, k) =>
 
-                 for {_ <- alloc(x)
+               case New(x, k) =>
 
-                      _ <- ReduceM.putRunQueue(k :: xs)
+                 for {st <- ReduceM.get[MachineState]
 
-                      _ <- reduceM
+                      _ <- ReduceM.tell(List(st))
 
-                 } yield {
-                   ()
-                 }
+                      _ <- alloc(x)
+
+                      _ <- putRunQueue(k :: xs)
+
+                 } yield ()
+
+               case _ => sys.error("Undefined term")
              }
+
+                  _ <- reduceM
+
+             } yield ()
          }
-
-    } yield {
-      ()
-    }
-}*/
-
-
-      //     runQueue match {
-
-      //       case Nil =>
-      //         ReduceM.tell
-
-      //         println("P : {  }")
-
-      //         println("Store : " + store.mkString("{ "," , "," }"))
-
-      //         println("Queue : " + runQueue.mkString("{ "," :: "," }"))
-
-      //         println("")
-
-      //         println("Terminated")
-
-      //         List {(store,runQueue)}  // Terminate
-      //   }
-      // )
-/*
-      val reduce: (Store,RunQueue) => List[(Store,RunQueue)] = {
-
-        (store, runQueue) =>
-
-          println("")
-
-          runQueue match {
-
-            case Nil =>
-
-              println("P : {  }")
-
-              println("Store : " + store.mkString("{ "," , "," }"))
-
-              println("Queue : " + runQueue.mkString("{ "," :: "," }"))
-
-              println("")
-
-              println("Terminated")
-
-              List {(store,runQueue)}  // Terminate
-
-            case proc :: xs =>
-
-              println("P : { " + proc.toString + " }")
-
-              println("Store : " + store.mkString("{ "," , "," }"))
-
-              println("Queue : " + xs.mkString("{ "," :: "," }"))
-
-              proc match {
-
-                case Zero() =>  // Nil
-
-                  reduce(store, xs)
-
-
-                case par @ Par(_*) =>  // Prl
-
-                  for { leavings <- par.processes.permutations.toList
-
-                        newRunQ = (leavings ++ xs).toList
-
-                        newState <- reduce(store, newRunQ)
-
-                  } yield { newState }
-
-                case in @ Input(z, x, k) =>
-
-                  val abs = Abstraction(z, k)
-
-                  x match {
-
-                    case Quote(Drop(n)) =>
-
-                      store.get(n) match {
-
-                        case Some(rho) =>
-
-                          rho match {
-
-                            case WriterQueue(writer: Concretion, writers) =>
-
-                              reduce(
-                                store + {n -> writerQueue(writers)},
-                                bind(z)(writer.q)(k) :: xs
-                              )
-
-                            case ReaderQueue(reader, readers) =>
-
-                              reduce(
-                                store + {n -> readerQueue((reader :: readers) :+ abs)},
-                                xs
-                              )
-
-                            case EmptyQueue() =>
-
-                              reduce(
-                                store + {n -> readerQueue(List(abs))},
-                                xs
-                              )
-                          }
-
-                        case None =>
-
-                          reduce(
-                            store + {n -> EmptyQueue()},
-                            in :: xs
-                          )
-                      }
-
-                    case _ =>
-
-                      store.get(x) match {
-
-                        case Some(rho) =>
-
-                          rho match {
-
-                            case WriterQueue(writer: Concretion, writers) =>
-
-                              reduce(
-                                store + {x -> writerQueue(writers)},
-                                bind(z)(writer.q)(k) :: xs
-                              )
-
-                            case ReaderQueue(reader, readers) =>
-
-                              reduce(
-                                store + {x -> readerQueue((reader :: readers) :+ abs)},
-                                xs
-                              )
-
-                            case EmptyQueue() =>
-
-                              reduce(
-                                store + {x -> readerQueue(List(abs))},
-                                xs
-                              )
-                          }
-
-                        case None =>
-
-                          reduce(
-                            store + {x -> EmptyQueue()},
-                            in :: xs
-                          )
-                      }
-
-                  }
-
-
-                case out @ Output(x, q) =>
-
-                  val atQ = Quote(q)
-
-                  x match {
-
-                    case Quote(Drop(n)) =>
-
-                      store.get(n) match {
-
-                        case Some(rho) =>
-
-                          rho match {
-
-                            case WriterQueue(writer: Concretion, writers) =>
-
-                              reduce(
-                                store + {
-                                  n -> writerQueue((writer :: writers) :+ Concretion(atQ))
-                                }
-                                  + {
-                                  atQ -> EmptyQueue()
-                                },
-                                xs
-                              )
-
-                            case ReaderQueue(reader, readers) =>
-
-                              reader match {
-
-                                case Abstraction(z, k) =>
-
-                                  reduce(
-                                    store + {
-                                      n -> readerQueue(readers)
-                                    }
-                                      + {
-                                      atQ -> EmptyQueue()
-                                    },
-                                    xs :+ bind(z)(atQ)(k)
-                                  )
-
-                                case other => sys.error(s"Unrecognized input statement: $other")
-                              }
-
-                            case EmptyQueue() =>
-
-                              reduce(
-                                store + {
-                                  n -> writerQueue(List(Concretion(atQ)))
-                                }
-                                  + {
-                                  atQ -> EmptyQueue()
-                                },
-                                xs
-                              )
-                          }
-
-                        case None =>
-
-                          reduce(
-                            store + {
-                              x -> EmptyQueue()
-                            },
-                            out :: xs
-                          )
-                      }
-
-                    case _ =>
-
-                      store.get(x) match {
-
-                        case Some(rho) =>
-
-                          rho match {
-
-                            case WriterQueue(writer: Concretion, writers) =>
-
-                              reduce(
-                                store + {
-                                  x -> writerQueue((writer :: writers) :+ Concretion(atQ))
-                                }
-                                  + {
-                                  atQ -> EmptyQueue()
-                                },
-                                xs
-                              )
-
-                            case ReaderQueue(reader, readers) =>
-
-                              reader match {
-
-                                case Abstraction(z, k) =>
-
-                                  reduce(
-                                    store + {
-                                      x -> readerQueue(readers)
-                                    }
-                                      + {
-                                      atQ -> EmptyQueue()
-                                    },
-                                    xs :+ bind(z)(atQ)(k)
-                                  )
-
-                                case other => sys.error(s"Unrecognized input statement: $other")
-                              }
-
-                            case EmptyQueue() =>
-
-                              reduce(
-                                store + {
-                                  x -> writerQueue(List(Concretion(atQ)))
-                                }
-                                  + {
-                                  atQ -> EmptyQueue()
-                                },
-                                xs
-                              )
-                          }
-
-                        case None =>
-
-                          reduce(
-                            store + {
-                              x -> EmptyQueue()
-                            },
-                            out :: xs
-                          )
-                      }
-                  }
-
-                case Drop(x) =>
-
-                  x match {
-
-                    case Quote(p) =>
-
-                      reduce (store, p :: xs)
-
-                    case v @ Var(id) => sys.error(s"Variable $v cannot be de-referenced")
-                  }
-
-
-                case New(x,k) =>
-
-                  reduce(
-                    store + {x -> EmptyQueue()},
-                    k :: xs
-                  )
-
-              }
-
-          }
-      }
+    } yield ()
+  }
 }
-
-
-
-
-
-
-
-   State := Store x Queue, state is a store/run-queue pair
-
-   Store : N -> O , a store is a finite partial mapping from names to actions available to be performed on those names
-
-   Queue := { P1, P2, ..., PN }, the run-queue is a (finite?) set of processes ready to be executed
-
-   O := { Ab1, Ab2, ..., AbN }, a channel queue may be a set of abstractions
-    | { Con1, Con2, ..., ConN }, or a set of concretions
-
-   N := An infinite set of identifiers
-
-   @ : P -> N , quoting converts a process into a name
-
-   * : N -> P , unquoting converts a name back into it's original process
-
-   P,Q := 0
-         | x!Q
-         | for(x <- x)P
-         | P|Q
-         | *x
-
-*/
 
 
 
