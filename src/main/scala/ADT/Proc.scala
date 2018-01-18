@@ -32,7 +32,7 @@ trait Proc[+Chan] extends Serializable {
     override def toString: String = "*" + x.toString
   }
 
-  // and the one we hold on faith - New : N x P -> P
+  // Neu : N x P -> P
   case class New[+Chan](x: Chan, p: Proc[Chan]) extends Proc[Chan] {
     override def toString: String = "new " + x + " in { " + p.toString + " }"
   }
@@ -83,6 +83,7 @@ object Proc {
         case Input(z,x,k) => foldLeft(k,f(f(b,z),x))(f)
         case Output(x, p) => f(foldLeft(p, b)(f), x)
         case Par(proc1, proc2) => foldLeft(proc2, foldLeft(proc1, b)(f))(f)
+        case New(x,proc1) => foldLeft(proc1,f(b,x))(f)
       }
 
     def foldRight[A, B](proc: Proc[A], lb: Eval[B])(f: (A, Eval[B]) => Eval[B]): Eval[B] =
@@ -92,6 +93,7 @@ object Proc {
         case Input(z,x,k) => f(z,f(x,foldRight(k,lb)(f)))
         case Output(x, p) => f(x, foldRight(p, lb)(f))
         case Par(proc1, proc2) => foldRight(proc1, foldRight(proc2, lb)(f))(f)
+        case New(x,proc1) => foldRight(proc1,f(x,lb))(f)
       }
   }
 
@@ -104,6 +106,7 @@ object Proc {
         case Input(z,x,k) => ap.map3(func(z),func(x),traverse(k)(func))(Input[B])
         case Output(x, p) => ap.map2(func(x), traverse(p)(func))(Output[B])
         case Par(proc1, proc2) => ap.map2(traverse(proc1)(func), traverse(proc2)(func))(Par[B](_,_))
+        case New(x,proc1) => ap.map2(func(x),traverse(proc1)(func))(New[B])
       }
 
     def foldLeft[A, B](proc: Proc[A], b: B)(f: (B, A) => B): B =
@@ -113,36 +116,3 @@ object Proc {
       foldableProc.foldRight(proc, lb)(f)
   }
 }
-
-
-/*
-Concrete State Space:
-
-COMM : State -> State'
-
-State := P x Env x Store
-  - states are represented as triplets
-
-Val := P x Env
-  - values sent and received are closures
-
-Store : A -> Chan
-  - a finite mapping from addresses to channels
-
-Env : Var -> A
-  - a finite mapping of free variables to addresses
-
-Var := An infinite set of identifiers
-
-@ : P x Env -> Chan
-  - converts a closure into a channel
-
-* : Chan -> P x Env
-  - converts a channel into the original closure
-
-- current work focuses on refactoring the above to have the store map to
-a channel queue, where readers and writers are stored. Once that's done,
-we apply structural abstraction to derive an abstract state space, yielding
-a formal definition of an abstract analysis framework.
-
-*/
