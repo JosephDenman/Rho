@@ -8,12 +8,15 @@ import scala.collection.immutable.HashMap
 
 package object Alias {
 
+  //The store is a finite partial mapping from Channels to ChannelQueues.
   type Store = HashMap[Channel,ChannelQueue]
 
+  //The run-queue is just the list of expressions to be evaluated.
   type RunQueue = List[Proc[Channel]]
 
 }
 
+// When creating sample expressions, every name must be unique!
 object Example extends App {
 
   // @0!0
@@ -138,13 +141,13 @@ object Example extends App {
     )
   )
 
-  println(reducible_11)
-
   val result = RhoInterface.reduceM.reduce(MachineState(HashMap.empty[Channel, ChannelQueue], reducible_11))
 
+  println(result.length)
   println(result.map{triple => triple._3.mkString("\n")}.mkString("\n" + "Terminated" + "\n" + "\n"))
 }
 
+//A channel may be a quoted process, or a variable.
 sealed trait Channel
 
   case class Quote(unquote: Proc[Channel]) extends Channel {
@@ -155,7 +158,8 @@ sealed trait Channel
     override def toString: String = id
   }
 
-
+//A ChannelQueue may be an empty queue, a list of readers, or a list of writers.
+// It will never be both a list of readers and a list of writers
 sealed trait ChannelQueue
 
   case class ReaderQueue(x:Reader, xs: List[Reader]) extends ChannelQueue {
@@ -170,18 +174,19 @@ sealed trait ChannelQueue
     override def toString: String = "[]"
   }
 
-
+//A reader is a abstraction providing a bound name "z", and a continuation
+//to evaluate, "k".
 sealed trait Reader
 
   case class Abstraction(z: Channel, k: Proc[Channel]) extends Reader {
     override def toString: String = " λ" + z + " { " + k.toString + " } "
   }
 
-
+//A writer simply represents a message, "q".
 sealed trait Writer
 
-  case class Concretion(q: Channel) extends Writer{
-    override def toString: String =  " !" + q.toString + " "
+  case class Concretion(q: Channel) extends Writer {
+    override def toString: String = " " + q.toString + " "
   }
 
 
@@ -189,7 +194,9 @@ case class MachineState(store: Store, runQueue: RunQueue){
   override def toString: String = "Queue: " + runQueue.mkString(" | ") + "\n" + "Store: " + store.mkString("{ ",", "," }") + "\n"
 }
 
+//ReduceM := StateT[WriterT[List,List,(S,A)]] = S => WriterT[List,List,(S,A)]] = S => (S,A) => List[(List[S],(S,A)] = List[(A,S,List[S])]
 
+//Parametric on notion of State, S, and the value being returned, A.
 case class ReduceM[S,A](reduce: S => List[(A, S, List[S])]) {
 
   def withFilter(pred: A => Boolean): ReduceM[S,A] = ReduceM {
@@ -228,7 +235,6 @@ object ReduceM {
     log =>
       writer((), log)
 
-
   def listen[S, A](ma: ReduceM[S, A]): ReduceM[S, (A, List[S])] = ReduceM {
     state0 =>
       for {(ret, state1, log) <- ma.reduce(state0)} yield {
@@ -257,6 +263,7 @@ object ReduceM {
       }
   }
 
+  //Insight on how to more idiomatically define this type-class is appreciated.
   implicit def reduceMonad[S]: Monad[ReduceM[S, ?]] = {
 
     new Monad[ReduceM[S, ?]] {
@@ -300,18 +307,20 @@ object RhoInterface {
     runQ =>
       ReduceM.state { st0 => ((), MachineState(st0.store, runQ)) }
 
-
+  // cancel(@*N) = N
   val cancel: Channel => Channel = {
     case Quote(Drop(n)) => n
     case chan => chan
   }
 
-
+  // Variable binding is represented by substitution in the body of the process.
+  // A more efficient implementation will achieve the same result using environments.
   val bind: Channel => Channel => Proc[Channel] => Proc[Channel] =
     chan0 =>
       chan1 =>
         proc =>
           Proc.functorProc.map[Channel,Channel](proc) { name =>
+            //@*@Q = @Q in P{@*@Q/z}
             if (name.equals(chan0)) cancel(chan1)
             else name
           }
@@ -338,6 +347,7 @@ object RhoInterface {
     chan =>
       for {store <- getStore
            chanQ1 <- store.get(chan) match {
+             //I'd like to just be able to say pure(chanQ0)
              case Some(chanQ0) => ReduceM.reduceMonad[MachineState].pure(chanQ0)
              case None => alloc(chan)
            }
@@ -358,10 +368,12 @@ object RhoInterface {
 
   val reduceM: ReduceM[MachineState, Unit] = {
 
+    // Get run-queue and pull first process off.
     for {runQueue <- getRunQueue
 
          _ <- runQueue match {
 
+           // If the queue is empty, log the final state, and terminate.
            case Nil =>
 
              for {st <- ReduceM.get[MachineState]
@@ -372,6 +384,7 @@ object RhoInterface {
 
              for {_ <- proc match {
 
+                 // (Store, 0 :: R) -> (Store, R)
                case Zero() =>
 
                  for {st <- ReduceM.get[MachineState]
@@ -385,14 +398,16 @@ object RhoInterface {
 
                case par@Par(_*) =>
 
+                 // Encodes non-determinism by generating an auxiliary run-queue for every permutation of the set (P1 | ... | Pn)
                  for {interleaving <- ReduceM.fromList(par.processes.permutations.toList)
 
+                      // Adds a permutation to the original run-queue
                       newRunQueue = (interleaving ++ xs).toList
 
+                      // Continues evaluating with new run-queue
                       _ <- putRunQueue(newRunQueue)
 
                  } yield ()
-
 
                case Input(z, x, k) =>
 
@@ -406,6 +421,7 @@ object RhoInterface {
 
                       _ <- chanQ match {
 
+                          // If there is a writer waiting, pull it off, and bind it's message to z in k.
                         case WriterQueue(writer: Concretion, writers) =>
 
                           for {_ <- write(x)(writerQueue(writers))
@@ -414,6 +430,7 @@ object RhoInterface {
 
                           } yield ()
 
+                          // If there is a reader waiting, create a reader, Abstraction(z,k), and add to the end of queue.
                         case ReaderQueue(reader, readers) =>
 
                           for {_ <- write(x)(readerQueue((reader :: readers) :+ abs))
@@ -422,6 +439,7 @@ object RhoInterface {
 
                           } yield ()
 
+                          // If queue is empty, create a ReaderQueue, and add reader to it.
                         case EmptyQueue() =>
 
                           for {_ <- write(x)(readerQueue(List(abs)))
@@ -447,6 +465,7 @@ object RhoInterface {
 
                       _ <- chanQ match {
 
+                          // Similar to ReaderQueue rule in Input.
                         case WriterQueue(writer: Concretion, writers) =>
 
                           for {_ <- write(x)(writerQueue((writer :: writers) :+ Concretion(atQ)))
@@ -457,6 +476,7 @@ object RhoInterface {
 
                           } yield ()
 
+                          // If reader in the queue, pull it off, bind message, and add continuation to the end of the run-queue
                         case ReaderQueue(reader, readers) =>
 
                           reader match {
@@ -472,6 +492,7 @@ object RhoInterface {
                               } yield ()
                           }
 
+                          // Similar to EmptyQueue rule in Input
                         case EmptyQueue() =>
 
                           for {_ <- write(x)(writerQueue(List(Concretion(atQ))))
@@ -484,7 +505,7 @@ object RhoInterface {
                       }
                  } yield ()
 
-
+                //
                case Drop(x) =>
 
                  x match {
@@ -495,6 +516,7 @@ object RhoInterface {
 
                           _ <- ReduceM.tell(List(st))
 
+                          //(Store, *@Q :: R) -> (Store, Q :: R)
                           _ <- putRunQueue(p :: xs)} yield ()
 
                    case v@Var(_) => sys.error(s"Variable $v cannot be de-referenced")
