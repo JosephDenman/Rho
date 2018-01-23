@@ -1,43 +1,7 @@
 package ADT
 
+
 import cats.{Applicative, Eval, Foldable, Functor, Traverse}
-
-// Term constructors
-trait Proc[+Chan] extends Serializable {
-  override def toString: String
-}
-
-  // 0 : 1 -> P
-  case class Zero[+Chan]() extends Proc[Chan]{
-    override def toString: String = "0"
-  }
-
-  // ! : N x P -> P
-  case class Output[+Chan](x: Chan, q: Proc[Chan]) extends Proc[Chan]{
-    override def toString: String = x.toString + "!(" + q.toString + ")"
-  }
-
-  // for : N x N x P -> P
-  case class Input[+Chan](z: Chan, x: Chan, k: Proc[Chan]) extends Proc[Chan]{
-    override def toString: String = "for( " + z.toString + " <- " + x.toString + " ){ " + k.toString + " }"
-  }
-
-  // | : P x P -> P
-  case class Par[+Chan](processes: Proc[Chan]* ) extends Proc[Chan]{
-    override def toString: String = { processes.map(p => p.toString).mkString(" | ") }
-  }
-
-  // * : N -> P
-  case class Drop[+Chan](x: Chan) extends Proc[Chan]{
-    override def toString: String = "*" + x.toString
-  }
-
-  // Neu : N x P -> P
-  case class New[+Chan](x: Chan, p: Proc[Chan]) extends Proc[Chan] {
-    override def toString: String = "new " + x + " in { " + p.toString + " }"
-  }
-
-
 
 /*
  * The uninhabited type.
@@ -59,7 +23,69 @@ object Void {
   // }
 }
 
+trait Channel extends Serializable
+
+  case class Quote(unquote: Proc[Channel]) extends Channel {
+    override def toString: String = "@(" + unquote + ")"
+  }
+
+  case class Var(id: String) extends Channel {
+    override def toString: String = id
+  }
+
+// Term constructors
+sealed trait Proc[+Chan] extends Serializable
+
 object Proc {
+
+  // 0 : 1 -> P
+  final case class Zero[+Chan]() extends Proc[Chan]{
+    override def toString: String = "0"
+  }
+
+  // ! : N x P -> P
+  final case class Output[+Chan](x: Chan, q: Proc[Chan]) extends Proc[Chan] {
+    override def toString: String = x.toString + "!(" + q.toString + ")"
+  }
+
+  // for : N x N x P -> P
+  final case class Input[+Chan](z: Chan, x: Chan, k: Proc[Chan]) extends Proc[Chan]{
+    override def toString: String = "for( " + z.toString + " <- " + x.toString + " ){ " + k.toString + " }"
+  }
+
+  // | : P x P -> P
+  final case class Par[+Chan](processes: Proc[Chan]* ) extends Proc[Chan]{
+    override def toString: String = { processes.map(p => p.toString).mkString(" | ") }
+  }
+
+  // * : N -> P
+  final case class Drop[+Chan](x: Chan) extends Proc[Chan]{
+    override def toString: String = "*" + x.toString
+  }
+
+  // Neu : N x P -> P
+  final case class New[+Chan](x: Chan, p: Proc[Chan]) extends Proc[Chan] {
+    override def toString: String = "new " + x + " in { " + p.toString + " }"
+  }
+
+/*
+  final case class Fix[F[_] : Functor](unFix: F[Fix[F]])
+
+  type Algebra[F[_],A] = F[A] => A
+
+  type InitAlgebra[F[_]] = Algebra[F[_],Fix[F[_]]]
+
+  type CoAlgebra[F[_],A] = A => F[A]
+
+  type TerminalAlgebra[F[_]] = CoAlgebra[F[_],Fix[F[_]]]
+
+  val drop: TerminalAlgebra[Proc] = { // Fix[Proc[_]] => Proc[Fix[Proc[_]]]
+    case Fix(proc) => proc
+  }
+
+  val quote: InitAlgebra[Proc] = { // Proc[Fix[Proc[_]]] => Fix[Proc[_]]
+    proc => Fix(proc)
+  }*/
 
   implicit val functorProc: Functor[Proc] = new Functor[Proc] {
     def map[A, B](proc: Proc[A])(func: A => B): Proc[B] =
@@ -101,7 +127,7 @@ object Proc {
 
     def traverse[G[_], A, B](proc: Proc[A])(func: A => G[B])(implicit ap: Applicative[G]): G[Proc[B]] =
       proc match {
-        case Zero() => ap.pure(Zero[B]())
+        case Zero() => ap.pure(Zero())
         case Drop(x) => ap.map(func(x))(Drop[B])
         case Input(z,x,k) => ap.map3(func(z),func(x),traverse(k)(func))(Input[B])
         case Output(x, p) => ap.map2(func(x), traverse(p)(func))(Output[B])
