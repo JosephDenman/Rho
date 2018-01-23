@@ -12,22 +12,22 @@ import scala.collection.immutable.HashMap
 object Example extends App {
 
   // @0!0
-  val reducible_1 = List(Output(Quote(Zero()), Par(Zero(), Zero())))
+  val reducible_1 = Output(Quote(Zero()), Zero())
 
   // @0!(0|0)
-  val reducible_2 = List(Output(Quote(Zero()), Par(Zero(), Zero())))
+  val reducible_2 = Output(Quote(Zero()), Par(Zero(), Zero()))
 
   // @(0|0)!0
-  val reducible_3 = List(Output(Quote(Par(Zero(), Zero())), Zero()))
+  val reducible_3 = Output(Quote(Par(Zero(), Zero())), Zero())
 
   // @(0|0)!(0|0)
-  val reducible_4 = List(Output(Quote(Par(Zero(), Zero())), Par(Zero(), Zero()))) // counter example
+  val reducible_4 = Output(Quote(Par(Zero(), Zero())), Par(Zero(), Zero())) // counter example
 
   // @0!(*@(0|0))
-  val reducible_5 = List(Output(Quote(Zero()), Drop(Quote(Par(Zero(), Zero())))))
+  val reducible_5 = Output(Quote(Zero()), Drop(Quote(Par(Zero(), Zero()))))
 
   // @0!(*@(0|0)) | for(@(0|0|0) <- @0){ *@(0|0|0)!( }
-  val reducible_6 = List(
+  val reducible_6 =
     Par(
       Output(
         Quote(Zero()),
@@ -39,10 +39,10 @@ object Example extends App {
         Drop(Quote(Par(Zero(), Zero(), Zero())))
       ),
     )
-  )
+
 
   // new x in { x!(0) }
-  val reducible_7 = List(
+  val reducible_7 =
     New(
       Var("x"),
       Output(
@@ -50,10 +50,10 @@ object Example extends App {
         Zero()
       )
     )
-  )
+
 
   // new x in { x!(0) | for(z <- x){*z} }
-  val reducible_8 = List(
+  val reducible_8 =
     New(
       Var("x"),
       Par(
@@ -68,10 +68,10 @@ object Example extends App {
         )
       )
     )
-  )
+
 
   // new x in { x!(0) | for(z <- x){ *z } }
-  val reducible_9 = List(
+  val reducible_9 =
     New(
       Var("x"),
       Par(
@@ -91,10 +91,10 @@ object Example extends App {
         )
       )
     )
-  )
+
 
   // new x in { new y in { x!(*y) | for(u <- y){ u!0 }} | for( z <- x ){ z!(0) } }
-  val reducible_10 = List(
+  val reducible_10 =
     New(
       Var("x"),
       Par(
@@ -108,11 +108,11 @@ object Example extends App {
         Input(Var("z"), Var("x"), Output(Var("z"), Zero()))
       )
     )
-  )
+
 
   // new x in { @(0|0)!*x | for(z <- @0){ new y in { z!(y!(0)) | for(v <- y){ *v } | for(q <- z){ *q }}}}
 
-  val reducible_11 = List(
+  val reducible_11 =
     New(
      Var("x"),
       Par(
@@ -131,11 +131,18 @@ object Example extends App {
         )
       )
     )
-  )
 
-  val result = RhoInterface.reduce.run(MachineState(HashMap.empty[Channel, ChannelQueue], reducible_10)).run
 
-  println(result.map{ triple => triple._1.mkString("\n")}.mkString("\n" + "Terminated" + "\n" + "\n"))
+  def evaluate(proc: Proc[Channel]): Unit = {
+
+    val result = RhoInterface.reduce.run(MachineState(HashMap.empty[Channel, ChannelQueue], List(proc))).run
+
+    for { index <- result.indices }{
+      println("\n" + result(index)._1.mkString("Trace " + (index.toInt+1).toString + "\n" + "\n","\n", "\n" + "Terminated" + "\n" ))
+    }
+  }
+
+  evaluate(reducible_9)
 }
 
 //A ChannelQueue may be an empty queue, a list of readers, or a list of writers.
