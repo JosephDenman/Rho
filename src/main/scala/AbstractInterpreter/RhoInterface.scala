@@ -70,7 +70,7 @@ object Example extends App {
     )
 
 
-  // new x in { x!(0) | for(z <- x){ *z } }
+  // new x in { x!(0) | for(z <- x){ *z } | for(u <- x){ *u }}
   val reducible_9 =
     New(
       Var("x"),
@@ -93,7 +93,7 @@ object Example extends App {
     )
 
 
-  // new x in { new y in { x!(*y) | for(u <- y){ u!0 }} | for( z <- x ){ z!(0) } }
+  // new x in { new y in { x!(*y) | for(u <- y){ u!0 }} | for(z <- x){ z!(0) } }
   val reducible_10 =
     New(
       Var("x"),
@@ -110,7 +110,7 @@ object Example extends App {
     )
 
 
-  // new x in { @(0|0)!*x | for(z <- @0){ new y in { z!(y!(0)) | for(v <- y){ *v } | for(q <- z){ *q }}}}
+  // new x in { @(0|0)!*x | for(z <- @(0|0)){ new y in { z!(y!(0)) | for(v <- y){ *v } | for(q <- z){ *q }}}}
 
   val reducible_11 =
     New(
@@ -134,9 +134,7 @@ object Example extends App {
 
 
   def evaluate(proc: Proc[Channel]): Unit = {
-
     val result = RhoInterface.reduce.run(MachineState(HashMap.empty[Channel, ChannelQueue], List(proc))).run
-
     for { index <- result.indices }{
       println("\n" + result(index)._1.mkString("Trace " + (index.toInt+1).toString + "\n" + "\n","\n", "\n" + "Terminated" + "\n" ))
     }
