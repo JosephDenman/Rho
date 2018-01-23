@@ -1,10 +1,10 @@
 # Rho
 
-###Proc
+### Proc
 
 Generalized Abstract Data Type for the Rho-Calculus
 
-####AbstractInterpreter
+#### AbstractInterpreter
 
 Includes a monad `Trace` for logging state changes over an expression evaluation, and an interface `RhoInterface` for evaluating expressions written with the Rho ADT. 
 
