@@ -1,27 +1,23 @@
 package AbstractInterpreter
 
+import Alias.Trace
 import cats._
 import cats.data._
-import cats.instances.list._
-import cats.Monad
-import cats.Monoid._
+import cats.implicits._
 
-object Trace {
 
-  type Trace[S,W,A] = StateT[WriterT[List,W,?],S,A]
+  object Trace {
 
-  def get[S,W](implicit W: Monoid[W]): Trace[S,W,S] =
-    StateT.get[WriterT[List[?],W,?],S](WriterT.catsDataApplicativeForWriterT(catsStdInstancesForList,W))
-  
-  def set[S,W](s: S)(implicit W: Monoid[W]): Trace[S,W,Unit] =
-    StateT.set[WriterT[List[?],W,?],S](s)(WriterT.catsDataApplicativeForWriterT(catsStdInstancesForList,W))
+    def pure[S,W: Monoid,A](a: A): Trace[S, W, A] = StateT.pure[WriterT[List, W, ?], S, A](a)
 
-  def modify[S,W](f: (S) => S)(implicit W: Monoid[W]): Trace[S,W,Unit] =
-    StateT.modify[WriterT[List[?],W,?],S](f)(WriterT.catsDataApplicativeForWriterT(catsStdInstancesForList,W))
+    def get[S,W: Monoid]: Trace[S, W, S] = StateT.get[WriterT[List, W, ?], S]
 
-  def tell[S,W](w: W)(implicit W: Monoid[W]): Trace[S,W,Unit] =
-    StateT.lift[WriterT[List[?],W,?],S,Unit](WriterT.tell(w))(WriterT.catsDataApplicativeForWriterT(catsStdInstancesForList,W))
+    def set[S,W: Monoid](s: S): Trace[S, W, Unit] = StateT.set[WriterT[List, W, ?], S](s)
 
-  def fromList[S,W,A](xs: List[A])(implicit W: Monoid[W]): Trace[S,W,A] =
-    StateT.lift[WriterT[List[?],W,?],S,A](WriterT.lift(xs))(WriterT.catsDataApplicativeForWriterT(catsStdInstancesForList,W))
-}
+    def modify[S,W: Monoid](f: S => S): Trace[S, W, Unit] = StateT.modify[WriterT[List, W, ?], S](f)
+
+    def tell[S,W: Monoid](w: W): Trace[S, W, Unit] = StateT.liftF[WriterT[List, W, ?], S, Unit](WriterT.tell(w))
+
+    def fromList[S,W: Monoid,A](xs: List[A]): Trace[S, W, A] = StateT.liftF[WriterT[List,W,?],S,A](WriterT.liftF(xs))
+
+  }

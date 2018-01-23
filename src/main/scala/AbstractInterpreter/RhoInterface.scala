@@ -1,19 +1,12 @@
 package AbstractInterpreter
 
-import ADT._
-import AbstractInterpreter.Alias.{RunQueue, Store}
+import ADT.Proc._
+import ADT.{Channel, Proc, Quote, Var}
+import Alias._
+import cats.implicits._
 
 import scala.collection.immutable.HashMap
 
-package object Alias {
-
-  //The store is a finite partial mapping from Channels to ChannelQueues.
-  type Store = HashMap[Channel,ChannelQueue]
-
-  //The run-queue is just the list of expressions to be evaluated.
-  type RunQueue = List[Proc[Channel]]
-
-}
 
 // When creating sample expressions, every name must be unique!
 object Example extends App {
@@ -61,7 +54,7 @@ object Example extends App {
 
   // new x in { x!(0) | for(z <- x){*z} }
   val reducible_8 = List(
-    New[Channel](
+    New(
       Var("x"),
       Par(
         Output(
@@ -120,7 +113,7 @@ object Example extends App {
   // new x in { @(0|0)!*x | for(z <- @0){ new y in { z!(y!(0)) | for(v <- y){ *v } | for(q <- z){ *q }}}}
 
   val reducible_11 = List(
-    New[Channel](
+    New(
      Var("x"),
       Par(
         Output(Quote(Par(Zero(),Zero())),Drop(Var("x"))),
@@ -140,22 +133,10 @@ object Example extends App {
     )
   )
 
-  val result = RhoInterface.reduceM.reduce(MachineState(HashMap.empty[Channel, ChannelQueue], reducible_11))
+  val result = RhoInterface.reduce.run(MachineState(HashMap.empty[Channel, ChannelQueue], reducible_10)).run
 
-  println(result.length)
-  println(result.map{triple => triple._3.mkString("\n")}.mkString("\n" + "Terminated" + "\n" + "\n"))
+  println(result.map{ triple => triple._1.mkString("\n")}.mkString("\n" + "Terminated" + "\n" + "\n"))
 }
-
-//A channel may be a quoted process, or a variable.
-sealed trait Channel
-
-  case class Quote(unquote: Proc[Channel]) extends Channel {
-    override def toString: String = "@(" + unquote + ")"
-  }
-
-  case class Var(id: String) extends Channel {
-    override def toString: String = id
-  }
 
 //A ChannelQueue may be an empty queue, a list of readers, or a list of writers.
 // It will never be both a list of readers and a list of writers
@@ -169,7 +150,7 @@ sealed trait ChannelQueue
     override def toString: String = (x :: xs).map{_.toString}.mkString("[", "][", "]")
   }
 
-  case class EmptyQueue() extends ChannelQueue {
+  case object EmptyQueue extends ChannelQueue {
     override def toString: String = "[]"
   }
 
@@ -196,30 +177,35 @@ case class MachineState(store: Store, runQueue: RunQueue){
 
 object RhoInterface {
 
-  val getStore: Trace[MachineState, List[MachineState], Store] =
-    Trace.get.map (st => st.store)
+  def getStore: Trace[MachineState,List[MachineState],Store] = {
+    Trace.get[MachineState, List[MachineState]].map { state => state.store }
+  }
 
+  def putStore: Store => Trace[MachineState, List[MachineState], Unit] =
+    store =>
+      Trace.modify[MachineState, List[MachineState]] {
+        case MachineState(_, runQueue) => MachineState(store, runQueue)
+      }
 
-  // val putStore: Store => Trace[MachineState, List[MachineState], Unit] =
-  //   store => Trace.modify (case MachineState(_,runQueue) => MachineState(store,runQueue))
+  def getRunQueue: Trace[MachineState,List[MachineState],RunQueue] = {
+    Trace.get[MachineState, List[MachineState]].map { st => st.runQueue }
+  }
 
-  val getRunQueue: Trace[MachineState, List[MachineState], RunQueue] =
-    Trace.get.map (st => st.runQueue)
-
-
-  // val putRunQueue: RunQueue => Trace[MachineState, List[MachineState], Unit] =
-  //   runQueue =>
-  //     Trace.modify (case MachineState(store,_) => MachineState(store,runQueue))
+  def putRunQueue: RunQueue => Trace[MachineState, List[MachineState], Unit] =
+    runQueue =>
+      Trace.modify[MachineState, List[MachineState]] {
+        case MachineState(store,_) => MachineState(store,runQueue)
+      }
 
   // cancel(@*N) = N
-  val cancel: Channel => Channel = {
+  def cancel: Channel => Channel = {
     case Quote(Drop(n)) => n
     case chan => chan
   }
 
   // Variable binding is represented by substitution in the body of the process.
   // A more efficient implementation will achieve the same result using environments.
-  val bind: Channel => Channel => Proc[Channel] => Proc[Channel] =
+  def bind: Channel => Channel => Proc[Channel] => Proc[Channel] =
     chan0 =>
       chan1 =>
         proc =>
@@ -230,7 +216,7 @@ object RhoInterface {
           }
 
 
-  val write: Channel => ChannelQueue => Trace[MachineState, List[MachineState], Unit] =
+  def write: Channel => ChannelQueue => Trace[MachineState, List[MachineState], Unit] =
     chan =>
       chanQ =>
         for {store <- getStore
@@ -240,37 +226,38 @@ object RhoInterface {
         } yield ()
 
 
-  val alloc: Channel => Trace[MachineState, List[MachineState], ChannelQueue] = {
+  def alloc: Channel => Trace[MachineState, List[MachineState], ChannelQueue] = {
     chan =>
-      val e = EmptyQueue()
+      val e = EmptyQueue
       for {_ <- write(chan)(e)} yield e
   }
 
 
-  val read: Channel => Trace[MachineState, List[MachineState], ChannelQueue] =
+  def read: Channel => Trace[MachineState, List[MachineState], ChannelQueue] =
     chan =>
       for {store <- getStore
            chanQ1 <- store.get(chan) match {
              //I'd like to just be able to say pure(chanQ0)
-             case Some(chanQ0) => Trace.reduceMonad[MachineState].pure(chanQ0)
+             case Some(chanQ0) => Trace.pure[MachineState,List[MachineState],ChannelQueue](chanQ0)
              case None => alloc(chan)
            }
       } yield chanQ1
 
 
-  val readerQueue: List[Reader] => ChannelQueue = {
-    case Nil => EmptyQueue()
+  // Smart constructor for readerQueue
+  def readerQueue: List[Reader] => ChannelQueue = {
+    case Nil => EmptyQueue
     case reader :: rs => ReaderQueue(reader, rs)
   }
 
-
-  val writerQueue: List[Writer] => ChannelQueue = {
-    case Nil => EmptyQueue()
+  // Smart constructor for writerQueue
+  def writerQueue: List[Writer] => ChannelQueue = {
+    case Nil => EmptyQueue
     case writer :: ws => WriterQueue(writer, ws)
   }
 
 
-  val reduceM: Trace[MachineState, List[MachineState], Unit] = {
+  def reduce: Trace[MachineState, List[MachineState], Unit] = {
 
     // Get run-queue and pull first process off.
     for {runQueue <- getRunQueue
@@ -280,7 +267,7 @@ object RhoInterface {
            // If the queue is empty, log the final state, and terminate.
            case Nil =>
 
-             for {st <- Trace.get[MachineState]
+             for {st <- Trace.get[MachineState,List[MachineState]]
 
                   _ <- Trace.tell(List(st))} yield ()
 
@@ -291,7 +278,7 @@ object RhoInterface {
                  // (Store, 0 :: R) -> (Store, R)
                case Zero() =>
 
-                 for {st <- Trace.get[MachineState]
+                 for {st <- Trace.get[MachineState,List[MachineState]]
 
                       _ <- Trace.tell(List(st))
 
@@ -303,7 +290,7 @@ object RhoInterface {
                case par@Par(_*) =>
 
                  // Encodes non-determinism by generating an auxiliary run-queue for every permutation of the set (P1 | ... | Pn)
-                 for {interleaving <- Trace.fromList(par.processes.permutations.toList)
+                 for {interleaving <- Trace.fromList[MachineState,List[MachineState],Seq[Proc[Channel]]](par.processes.permutations.toList)
 
                       // Adds a permutation to the original run-queue
                       newRunQueue = (interleaving ++ xs).toList
@@ -317,7 +304,7 @@ object RhoInterface {
 
                  val abs = Abstraction(z, k)
 
-                 for {st <- Trace.get[MachineState]
+                 for {st <- Trace.get[MachineState,List[MachineState]]
 
                       _ <- Trace.tell(List(st))
 
@@ -344,13 +331,13 @@ object RhoInterface {
                           } yield ()
 
                           // If queue is empty, create a ReaderQueue, and add reader to it.
-                        case EmptyQueue() =>
+                        case EmptyQueue =>
 
                           for {_ <- write(x)(readerQueue(List(abs)))
 
                                newStore <- getStore
 
-                               _ <- Trace.put(MachineState(newStore, xs))
+                               _ <- Trace.set[MachineState,List[MachineState]](MachineState(newStore, xs))
 
                           } yield ()
                       }
@@ -361,8 +348,7 @@ object RhoInterface {
 
                  val atQ = Quote(q)
 
-                 for {st <- Trace.get[MachineState]
-
+                 for {st <- Trace.get[MachineState,List[MachineState]]
                       _ <- Trace.tell(List(st))
 
                       chanQ <- read(x)
@@ -376,7 +362,7 @@ object RhoInterface {
 
                                newStore <- getStore
 
-                               _ <- Trace.put(MachineState(newStore, xs))
+                               _ <- Trace.set[MachineState,List[MachineState]](MachineState(newStore, xs))
 
                           } yield ()
 
@@ -391,19 +377,19 @@ object RhoInterface {
 
                                    newStore <- getStore
 
-                                   _ <- Trace.put(MachineState(newStore, xs :+ bind(z)(atQ)(k)))
+                                   _ <- Trace.set[MachineState,List[MachineState]](MachineState(newStore, xs :+ bind(z)(atQ)(k)))
 
                               } yield ()
                           }
 
                           // Similar to EmptyQueue rule in Input
-                        case EmptyQueue() =>
+                        case EmptyQueue =>
 
                           for {_ <- write(x)(writerQueue(List(Concretion(atQ))))
 
                                newStore <- getStore
 
-                               _ <- Trace.put(MachineState(newStore, xs))
+                               _ <- Trace.set[MachineState,List[MachineState]](MachineState(newStore, xs))
 
                           } yield ()
                       }
@@ -416,7 +402,7 @@ object RhoInterface {
 
                    case Quote(p) =>
 
-                     for {st <- Trace.get[MachineState]
+                     for {st <- Trace.get[MachineState,List[MachineState]]
 
                           _ <- Trace.tell(List(st))
 
@@ -429,7 +415,7 @@ object RhoInterface {
 
                case New(x, k) =>
 
-                 for {st <- Trace.get[MachineState]
+                 for {st <- Trace.get[MachineState,List[MachineState]]
 
                       _ <- Trace.tell(List(st))
 
@@ -442,7 +428,7 @@ object RhoInterface {
                case _ => sys.error("Undefined term")
              }
 
-                  _ <- reduceM
+                  _ <- reduce
 
              } yield ()
          }
