@@ -12,6 +12,6 @@ package object Alias {
   type Store = HashMap[Channel, ChannelQueue]
 
   //The run-queue is just the list of expressions to be evaluated.
-  type RunQueue = List[Proc[Channel]]
+  type RunQueue = List[Proc]
 
 }

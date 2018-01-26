@@ -1,144 +1,258 @@
 package ADT
 
+sealed trait Channel extends Serializable
 
-import cats.{Applicative, Eval, Foldable, Functor, Traverse}
-
-/*
- * The uninhabited type.
- */
-case class Void(z: Void)
-
-object Void {
-
-  /*
-   * Logical reasoning of type 'ex contradictione sequitur quodlibet'
-   */
-
-  def absurd[A](z: Void): A = absurd(z)
-
-  def vacuous[F[_], A](fa: F[Void], z: Void)(implicit F: Functor[F]): F[A] = F.map(fa)(absurd(z))
-
-  // implicit def voidSemiGroup: Semigroup[Void] = new Semigroup[Void] {
-  //   def append(f1: Void, f2: => Void) = f2 //right biased
-  // }
+case class Quote(unquote: Proc) extends Channel {
+  override def equals(o: Any): Boolean = {
+    o match {
+      case that @ Quote(n) => Proc.nameEquiv(this,that)
+      case _ => super.equals(o)
+    }
+  }
+  override def toString: String = "@(" + unquote + ")"
 }
 
-trait Channel extends Serializable
-
-  case class Quote(unquote: Proc[Channel]) extends Channel {
-    override def toString: String = "@(" + unquote + ")"
-  }
-
-  case class Var(id: String) extends Channel {
-    override def toString: String = id
-  }
+case class Var(id: String) extends Channel {
+  override def toString: String = id
+}
 
 // Term constructors
-sealed trait Proc[+Chan] extends Serializable
+sealed trait Proc extends Serializable
 
 object Proc {
 
+  def calcNextName: Proc => Quote = {
+    case Zero() => Quote(Zero())
+    case Drop(Quote(p)) => Quote(par(p, p))
+    case Input(Action(Quote(psubj), Quote(pobj)), cont) => Quote(parstar(List(psubj, pobj, cont)))
+    case Output(Quote(psubj), cont) => Quote(par(psubj, cont))
+    case Par(Nil) => Quote(Zero())
+    case Par(head :: tail) => Quote(tail.foldLeft(head) { (acc, proc) => par(acc, proc) })
+  }
+
+  def substitute: Proc => Quote => Quote => Proc = { proc => nsource => ntarget =>
+
+    proc match {
+
+      case Zero() => Zero()
+
+      case Drop( n ) =>
+        Drop(
+          if (nameEquiv(n, ntarget)) nsource
+          else n
+        )
+
+      case Input( Action( nsubj, nobj ), cont ) =>
+
+        val obj: Quote = {
+          if (nameEquiv( nobj, ntarget)) calcNextName( Input( Action( nsubj, nobj ), cont ))
+          else nobj
+        }
+
+        val subj: Quote = {
+          if (nameEquiv( nsubj, ntarget )) nsource
+          else nsubj
+        }
+
+        val cont_ : Proc = {
+          substitute(
+            if(nameEquiv( nobj, ntarget )) substitute(cont)(obj)(nobj)
+            else cont
+          )(nsource)(ntarget)
+        }
+
+        Input( Action(subj,obj), cont_ )
+
+      case Output( nsubj, cont ) =>
+
+        val subj: Quote = {
+          if (nameEquiv( nsubj, ntarget )) nsource
+          else nsubj
+        }
+
+        Output( subj, substitute(cont)(nsource)(ntarget) )
+
+      case Par( xs ) =>
+        Par(xs.map(proc => substitute(proc)(nsource)(ntarget)))
+    }
+  }
+
+  def alphaEquiv: Proc => Proc => Boolean = { proc1 => proc2 =>
+    (proc1, proc2) match {
+      case (Input(Action(nsubj1, nobj1), cont1),
+            Input(Action(nsubj2, nobj2), cont2)) =>
+        nameEquiv(nsubj1, nsubj2) && (cont1 == substitute(cont2)(nobj1)(nobj2))
+      case (p1, p2) => p1 == p2
+    }
+  }
+
+  def structurallyEquivalent(proc1: Proc, proc2: Proc): Boolean = {
+
+    (proc1, proc2) match {
+
+      case (Zero(), Par(Nil)) => true
+
+      case (Par(Nil), Zero()) => true
+
+      case (Zero(), Par( head :: tail )) =>
+        structurallyEquivalent(proc1, head) &&
+          structurallyEquivalent(proc1, Par(tail))
+
+      case (Par(head :: tail), Zero()) =>
+        structurallyEquivalent(Zero(), Par(head :: tail))
+
+      case (Input(Action(nsubj1, nobj1), cont1),
+            Input(Action(nsubj2, nobj2), cont2)) =>
+        nameEquiv(nsubj1, nsubj2) &&
+          structurallyEquivalent(cont1, substitute(cont2)(nobj1)(nobj2))
+
+      case (Par(head :: tail ), Par(xs)) =>
+        xs.partition(proc => structurallyEquivalent(head, proc)) match {
+          case (Nil, tl) => false
+          case (eqhd, eqtl) =>
+            eqhd.foldLeft((false, List[Proc](), eqhd.tail)) { (rejects, proc) =>
+                  rejects match {
+                    case (false, r, l) =>
+                      if (structurallyEquivalent(parstar(r ++ l ++ eqtl), Par(tail))) (true, r, l)
+                      else {
+                        l match {
+                          case Nil => (false, r ++ List(proc), Nil)
+                          case x :: xs1 => (false, r ++ List(proc), xs1)
+                        }
+                      }
+                    case (true, r, l) => (true, r, l)
+                  }
+                }._1
+        }
+
+      case (Par(xs), Par(head :: tail )) =>
+        structurallyEquivalent(Par(head :: tail), Par(xs))
+
+      case (_, Par(xs)) =>
+        xs.partition(proc => structurallyEquivalent(proc1, proc)) match {
+          case (Nil, procs)           => false
+          case (List(eqproc), procs) => structurallyEquivalent(Zero(), Par(procs))
+          case ( head :: tail, procs ) => false
+        }
+
+      case (Par(xs), _) =>
+        structurallyEquivalent(proc2, Par(xs))
+
+      case (_, _) => proc1 == proc2
+    }
+  }
+
+  def nameEquiv(n1: Quote, n2: Quote): Boolean = {
+    (n1, n2) match {
+      case (Quote(Drop(n11)), _)  => nameEquiv(n11, n2)
+      case (_, Quote(Drop(n21)))  => nameEquiv(n1, n21)
+      case (Quote(p1), Quote(p2)) => structurallyEquivalent(p1, p2)
+    }
+  }
+
+  def free(proc: Proc): Set[Quote] = {
+    proc match {
+      case Zero()                           => Set.empty[Quote]
+      case Drop(n)                          => Set(n)
+      case Input(Action(nsubj, nobj), cont) => free(cont) - nobj + nsubj
+      case Output(nsubj, cont)              => free(cont) + nsubj
+      case Par(xs) =>
+        xs.foldLeft(Set.empty[Quote]) { (acc, proc) =>
+          acc.union(free(proc))
+        }
+    }
+  }
+
+  def nameQuoteDepth(name: Quote): Int = {
+    name match {
+      case Quote(proc) => 1 + procQuoteDepth(proc)
+    }
+  }
+
+  def procQuoteDepth(proc: Proc): Int = {
+    proc match {
+      case Zero()  => 0
+      case Drop(n) => nameQuoteDepth(n)
+      case Input(Action(nsubj, nobj), k) =>
+        val qDSubj = nameQuoteDepth(nsubj)
+        val qDCont = procQuoteDepth(k)
+        math.max(qDSubj, qDCont)
+      case Output(nsubj, k) =>
+        val qDSubj = nameQuoteDepth(nsubj)
+        val qDCont = procQuoteDepth(k)
+        math.max(qDSubj, qDCont)
+      case Par(xs) =>
+        xs.foldLeft(0) { (qD, proc) =>
+          val qDP = procQuoteDepth(proc)
+          math.max(qD, qDP)
+        }
+    }
+  }
+
   // 0 : 1 -> P
-  final case class Zero[+Chan]() extends Proc[Chan]{
+  final case class Zero() extends Proc {
     override def toString: String = "0"
   }
 
+  def zero = Zero()
+
   // ! : N x P -> P
-  final case class Output[+Chan](x: Chan, q: Proc[Chan]) extends Proc[Chan] {
+  final case class Output(x: Quote, q: Proc) extends Proc {
     override def toString: String = x.toString + "!(" + q.toString + ")"
   }
 
+  def lift(nsubj: Quote, cont: Proc): Output = Output(nsubj,cont)
+
   // for : N x N x P -> P
-  final case class Input[+Chan](z: Chan, x: Chan, k: Proc[Chan]) extends Proc[Chan]{
-    override def toString: String = "for( " + z.toString + " <- " + x.toString + " ){ " + k.toString + " }"
+  final case class Input(a: Action, k: Proc) extends Proc {
+    override def toString: String = a.toString + "{ " + k.toString + " }"
   }
 
+  def input(nsubj: Quote, nobj: Quote, cont: Proc): Input = Input(Action(nsubj,nobj),cont)
+
   // | : P x P -> P
-  final case class Par[+Chan](processes: Proc[Chan]* ) extends Proc[Chan]{
-    override def toString: String = { processes.map(p => p.toString).mkString(" | ") }
+  final case class Par(processes: List[Proc]) extends Proc {
+    override def toString: String = {
+      processes.map(p => p.toString).mkString(" | ")
+    }
+  }
+
+  def par(proc1: Proc, proc2: Proc): Par = {
+    (proc1, proc2) match {
+      case (Par(xs0), Par(xs1)) => Par(xs0 ++ xs1)
+      case (Par(xs),proc) => Par(xs ++ List(proc))
+      case (proc, Par(xs)) => Par(proc :: xs)
+      case (p1,p2) => Par(p1,p2)
+    }
+  }
+
+  def parstar(xs: List[Proc]): Proc = {
+    xs match {
+      case Nil => Zero()
+      case head :: tail => tail.foldLeft(head)((acc,proc) => par(acc,proc))
+    }
+  }
+
+  object Par {
+    def apply(seqProc: Proc*): Par = Par(seqProc.toList)
   }
 
   // * : N -> P
-  final case class Drop[+Chan](x: Chan) extends Proc[Chan]{
+  final case class Drop(x: Quote) extends Proc {
     override def toString: String = "*" + x.toString
   }
 
-  // Neu : N x P -> P
-  final case class New[+Chan](x: Chan, p: Proc[Chan]) extends Proc[Chan] {
-    override def toString: String = "new " + x + " in { " + p.toString + " }"
+  def drop(n: Quote): Drop = Drop(n)
+
+  // Action(x,z) := for(z <- x)
+  final case class Action(nsubj: Quote, nobj: Quote) {
+    override def toString: String =
+      "for( " + nobj.toString + " <- " + nsubj.toString + " )"
   }
 
-/*
-  final case class Fix[F[_] : Functor](unFix: F[Fix[F]])
-
-  type Algebra[F[_],A] = F[A] => A
-
-  type InitAlgebra[F[_]] = Algebra[F[_],Fix[F[_]]]
-
-  type CoAlgebra[F[_],A] = A => F[A]
-
-  type TerminalAlgebra[F[_]] = CoAlgebra[F[_],Fix[F[_]]]
-
-  val drop: TerminalAlgebra[Proc] = { // Fix[Proc[_]] => Proc[Fix[Proc[_]]]
-    case Fix(proc) => proc
-  }
-
-  val quote: InitAlgebra[Proc] = { // Proc[Fix[Proc[_]]] => Fix[Proc[_]]
-    proc => Fix(proc)
-  }*/
-
-  implicit val functorProc: Functor[Proc] = new Functor[Proc] {
-    def map[A, B](proc: Proc[A])(func: A => B): Proc[B] =
-      proc match {
-        case Zero() => Zero()
-        case Drop(x) => Drop(func(x))
-        case Input(z,x,k) => Input(func(z),func(x),map(k)(func))
-        case Output(x, p) => Output(func(x), map(p)(func))
-        case Par(xs@_*) =>
-          val newXs = xs map { p => map(p)(func) }
-          Par(newXs: _*)
-        case New(x,proc1) => New(func(x), map(proc1)(func))
-      }
-  }
-
-  implicit val foldableProc: Foldable[Proc] = new Foldable[Proc] {
-    def foldLeft[A, B](proc: Proc[A], b: B)(f: (B, A) => B): B =
-      proc match {
-        case Zero() => b
-        case Drop(x) => f(b, x)
-        case Input(z,x,k) => foldLeft(k,f(f(b,z),x))(f)
-        case Output(x, p) => f(foldLeft(p, b)(f), x)
-        case Par(proc1, proc2) => foldLeft(proc2, foldLeft(proc1, b)(f))(f)
-        case New(x,proc1) => foldLeft(proc1,f(b,x))(f)
-      }
-
-    def foldRight[A, B](proc: Proc[A], lb: Eval[B])(f: (A, Eval[B]) => Eval[B]): Eval[B] =
-      proc match {
-        case Zero() => lb
-        case Drop(x) => f(x, lb)
-        case Input(z,x,k) => f(z,f(x,foldRight(k,lb)(f)))
-        case Output(x, p) => f(x, foldRight(p, lb)(f))
-        case Par(proc1, proc2) => foldRight(proc1, foldRight(proc2, lb)(f))(f)
-        case New(x,proc1) => foldRight(proc1,f(x,lb))(f)
-      }
-  }
-
-  implicit val traversableProc: Traverse[Proc] = new Traverse[Proc] {
-
-    def traverse[G[_], A, B](proc: Proc[A])(func: A => G[B])(implicit ap: Applicative[G]): G[Proc[B]] =
-      proc match {
-        case Zero() => ap.pure(Zero())
-        case Drop(x) => ap.map(func(x))(Drop[B])
-        case Input(z,x,k) => ap.map3(func(z),func(x),traverse(k)(func))(Input[B])
-        case Output(x, p) => ap.map2(func(x), traverse(p)(func))(Output[B])
-        case Par(proc1, proc2) => ap.map2(traverse(proc1)(func), traverse(proc2)(func))(Par[B](_,_))
-        case New(x,proc1) => ap.map2(func(x),traverse(proc1)(func))(New[B])
-      }
-
-    def foldLeft[A, B](proc: Proc[A], b: B)(f: (B, A) => B): B =
-      foldableProc.foldLeft(proc, b)(f)
-
-    def foldRight[A, B](proc: Proc[A], lb: Eval[B])(f: (A, Eval[B]) => Eval[B]): Eval[B] =
-      foldableProc.foldRight(proc, lb)(f)
+  def prefix(act: Action, cont: Proc): Input = {
+    act match {
+      case Action(Quote(proc1),Quote(proc2)) => input(Quote(proc1),Quote(proc2),cont)
+    }
   }
 }

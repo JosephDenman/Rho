@@ -5,7 +5,6 @@ import cats._
 import cats.data._
 import cats.implicits._
 
-
   object Trace {
 
     def pure[S,W: Monoid,A](a: A): Trace[S, W, A] = StateT.pure[WriterT[List, W, ?], S, A](a)
