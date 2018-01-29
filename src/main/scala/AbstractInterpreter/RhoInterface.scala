@@ -11,33 +11,33 @@ import scala.collection.immutable.HashMap
 object Example extends App {
 
   // @0!0
-  val reducible_1 = Output(Quote(Zero()), Zero())
+  val reducible_1 = Output(Quote(Zero), Zero)
 
   // @0!(0|0)
-  val reducible_2 = Output(Quote(Zero()), Par(Zero(), Zero()))
+  val reducible_2 = Output(Quote(Zero), Par(Zero, Zero))
 
   // @(0|0)!0
-  val reducible_3 = Output(Quote(Par(Zero(), Zero())), Zero())
+  val reducible_3 = Output(Quote(Par(Zero, Zero)), Zero)
 
   // @(0|0)!(0|0)
-  val reducible_4 = Output(Quote(Par(Zero(), Zero())), Par(Zero(), Zero())) // counter example
+  val reducible_4 = Output(Quote(Par(Zero, Zero)), Par(Zero, Zero)) // counter example
 
   // @0!(*@(0|0))
-  val reducible_5 = Output(Quote(Zero()), Drop(Quote(Par(Zero(), Zero()))))
+  val reducible_5 = Output(Quote(Zero), Drop(Quote(Par(Zero, Zero))))
 
   // @0!(*@(0|0)) | for(@(0|0|0) <- @0){ *@(0|0|0)!( }
   val reducible_6 =
     Par(
       Output(
-        Quote(Zero()),
-        Drop(Quote(Par(Zero(), Zero())))
+        Quote(Zero),
+        Drop(Quote(Par(Zero, Zero)))
       ),
       Input(
         Action(
-          Quote(Zero()),
-          Quote(Par(Zero(), Zero(), Zero()))
+          Quote(Zero),
+          Quote(Par(Zero, Zero, Zero))
         ),
-        Drop(Quote(Par(Zero(), Zero(), Zero())))
+        Drop(Quote(Par(Zero, Zero, Zero)))
       ),
     )
 
@@ -47,7 +47,7 @@ object Example extends App {
       Var("x"),
       Output(
         Var("x"),
-        Zero()
+        Zero
       )
     )*/
 
@@ -60,7 +60,7 @@ object Example extends App {
       Par(
         Output(
           Var("x"),
-          Zero()
+          Zero
         ),
         Input(
           Var("z"),
@@ -77,7 +77,7 @@ object Example extends App {
       Par(
         Output(
           Var("x"),
-          Zero()
+          Zero
         ),
         Input(
           Var("z"),
@@ -101,10 +101,10 @@ object Example extends App {
           Var("y"),
           Par(
             Output(Var("x"), Drop(Var("y"))),
-            Input(Var("u"), Var("y"), Output(Var("u"), Zero()))
+            Input(Var("u"), Var("y"), Output(Var("u"), Zero))
           )
         ),
-        Input(Var("z"), Var("x"), Output(Var("z"), Zero()))
+        Input(Var("z"), Var("x"), Output(Var("z"), Zero))
       )
     )*/
 
@@ -114,14 +114,14 @@ object Example extends App {
     New(
      Var("x"),
       Par(
-        Output(Quote(Par(Zero(),Zero())),Drop(Var("x"))),
+        Output(Quote(Par(Zero,Zero)),Drop(Var("x"))),
         Input(
           Var("z"),
-          Quote(Par(Zero(),Zero())),
+          Quote(Par(Zero,Zero)),
           New(
             Var("y"),
             Par(
-              Output(Var("z"),Output(Var("y"),Zero())),
+              Output(Var("z"),Output(Var("y"),Zero)),
               Input(Var("v"),Var("y"),Drop(Var("v"))),
               Input(Var("q"),Var("z"),Drop(Var("q")))
             )
@@ -222,7 +222,7 @@ object RhoInterface {
   // Variable binding is represented by substitution in the body of the process.
   // A more efficient implementation will achieve the same result using environments.
   def bind: Quote => Quote => Proc => Proc =
-    atQ => z => proc => substitute(proc)(atQ)(z)
+    atQ => z => proc => semanticSubstitution(proc)(atQ)(z)
 
   def write
     : Channel => ChannelQueue => Trace[MachineState, List[MachineState], Unit] =
@@ -287,7 +287,7 @@ object RhoInterface {
             _ <- proc match {
 
               // (Store, 0 :: R) -> (Store, R)
-              case Zero() =>
+              case Zero =>
                 for {
                   st <- Trace.get[MachineState, List[MachineState]]
 

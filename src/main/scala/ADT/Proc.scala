@@ -22,19 +22,19 @@ sealed trait Proc extends Serializable
 object Proc {
 
   def calcNextName: Proc => Quote = {
-    case Zero() => Quote(Zero())
+    case Zero => Quote(Zero)
     case Drop(Quote(p)) => Quote(par(p, p))
     case Input(Action(Quote(psubj), Quote(pobj)), cont) => Quote(parstar(List(psubj, pobj, cont)))
     case Output(Quote(psubj), cont) => Quote(par(psubj, cont))
-    case Par(Nil) => Quote(Zero())
+    case Par(Nil) => Quote(Zero)
     case Par(head :: tail) => Quote(tail.foldLeft(head) { (acc, proc) => par(acc, proc) })
   }
 
-  def substitute: Proc => Quote => Quote => Proc = { proc => nsource => ntarget =>
+  def syntacticSubstitution: Proc => Quote => Quote => Proc = { proc => nsource => ntarget =>
 
     proc match {
 
-      case Zero() => Zero()
+      case Zero => Zero
 
       case Drop( n ) =>
         Drop(
@@ -55,8 +55,8 @@ object Proc {
         }
 
         val cont_ : Proc = {
-          substitute(
-            if(nameEquiv( nobj, ntarget )) substitute(cont)(obj)(nobj)
+          syntacticSubstitution(
+            if(nameEquiv( nobj, ntarget )) syntacticSubstitution(cont)(obj)(nobj)
             else cont
           )(nsource)(ntarget)
         }
@@ -70,10 +70,10 @@ object Proc {
           else nsubj
         }
 
-        Output( subj, substitute(cont)(nsource)(ntarget) )
+        Output( subj, syntacticSubstitution(cont)(nsource)(ntarget) )
 
       case Par( xs ) =>
-        Par(xs.map(proc => substitute(proc)(nsource)(ntarget)))
+        Par(xs.map(proc => syntacticSubstitution(proc)(nsource)(ntarget)))
     }
   }
 
@@ -81,8 +81,57 @@ object Proc {
     (proc1, proc2) match {
       case (Input(Action(nsubj1, nobj1), cont1),
             Input(Action(nsubj2, nobj2), cont2)) =>
-        nameEquiv(nsubj1, nsubj2) && (cont1 == substitute(cont2)(nobj1)(nobj2))
+        nameEquiv(nsubj1, nsubj2) && (cont1 == syntacticSubstitution(cont2)(nobj1)(nobj2))
       case (p1, p2) => p1 == p2
+    }
+  }
+
+  def semanticSubstitution: Proc => Quote => Quote => Proc = { proc => nsource => ntarget =>
+
+    proc match {
+
+      case Zero => Zero
+
+      case Drop( n ) =>
+        if (nameEquiv(n, ntarget)) {
+          nsource match {
+            case Quote( sProc ) => sProc
+            // case Var(_) => ???
+            }
+        } else Drop ( n )
+
+      case Input( Action( nsubj, nobj ), cont ) =>
+
+        val obj: Quote = {
+          if (nameEquiv( nobj, ntarget)) calcNextName( Input( Action( nsubj, nobj ), cont ))
+          else nobj
+        }
+
+        val subj: Quote = {
+          if (nameEquiv( nsubj, ntarget )) nsource
+          else nsubj
+        }
+
+        val cont_ : Proc = {
+          syntacticSubstitution(
+            if(nameEquiv( nobj, ntarget )) semanticSubstitution(cont)(obj)(nobj)
+            else cont
+          )(nsource)(ntarget)
+        }
+
+        Input( Action(subj,obj), cont_ )
+
+      case Output( nsubj, cont ) =>
+
+        val subj: Quote = {
+          if (nameEquiv( nsubj, ntarget )) nsource
+          else nsubj
+        }
+
+        Output( subj, semanticSubstitution(cont)(nsource)(ntarget) )
+
+      case Par( xs ) =>
+        Par(xs.map(proc => semanticSubstitution(proc)(nsource)(ntarget)))
     }
   }
 
@@ -90,21 +139,21 @@ object Proc {
 
     (proc1, proc2) match {
 
-      case (Zero(), Par(Nil)) => true
+      case (Zero, Par(Nil)) => true
 
-      case (Par(Nil), Zero()) => true
+      case (Par(Nil), Zero) => true
 
-      case (Zero(), Par( head :: tail )) =>
+      case (Zero, Par( head :: tail )) =>
         structurallyEquivalent(proc1, head) &&
           structurallyEquivalent(proc1, Par(tail))
 
-      case (Par(head :: tail), Zero()) =>
-        structurallyEquivalent(Zero(), Par(head :: tail))
+      case (Par(head :: tail), Zero) =>
+        structurallyEquivalent(Zero, Par(head :: tail))
 
       case (Input(Action(nsubj1, nobj1), cont1),
             Input(Action(nsubj2, nobj2), cont2)) =>
         nameEquiv(nsubj1, nsubj2) &&
-          structurallyEquivalent(cont1, substitute(cont2)(nobj1)(nobj2))
+          structurallyEquivalent(cont1, syntacticSubstitution(cont2)(nobj1)(nobj2))
 
       case (Par(head :: tail ), Par(xs)) =>
         xs.partition(proc => structurallyEquivalent(head, proc)) match {
@@ -131,7 +180,7 @@ object Proc {
       case (_, Par(xs)) =>
         xs.partition(proc => structurallyEquivalent(proc1, proc)) match {
           case (Nil, procs)           => false
-          case (List(eqproc), procs) => structurallyEquivalent(Zero(), Par(procs))
+          case (List(eqproc), procs) => structurallyEquivalent(Zero, Par(procs))
           case ( head :: tail, procs ) => false
         }
 
@@ -152,7 +201,7 @@ object Proc {
 
   def free(proc: Proc): Set[Quote] = {
     proc match {
-      case Zero()                           => Set.empty[Quote]
+      case Zero                           => Set.empty[Quote]
       case Drop(n)                          => Set(n)
       case Input(Action(nsubj, nobj), cont) => free(cont) - nobj + nsubj
       case Output(nsubj, cont)              => free(cont) + nsubj
@@ -171,7 +220,7 @@ object Proc {
 
   def procQuoteDepth(proc: Proc): Int = {
     proc match {
-      case Zero()  => 0
+      case Zero  => 0
       case Drop(n) => nameQuoteDepth(n)
       case Input(Action(nsubj, nobj), k) =>
         val qDSubj = nameQuoteDepth(nsubj)
@@ -189,28 +238,28 @@ object Proc {
     }
   }
 
-  // 0 : 1 -> P
-  final case class Zero() extends Proc {
+  // 0 : 1 => P
+  final case object Zero extends Proc {
     override def toString: String = "0"
   }
 
-  def zero = Zero()
+  def zero = Zero
 
-  // ! : N x P -> P
+  // ! : N x P => P
   final case class Output(x: Quote, q: Proc) extends Proc {
     override def toString: String = x.toString + "!(" + q.toString + ")"
   }
 
   def lift(nsubj: Quote, cont: Proc): Output = Output(nsubj,cont)
 
-  // for : N x N x P -> P
+  // for : N x N x P => P
   final case class Input(a: Action, k: Proc) extends Proc {
     override def toString: String = a.toString + "{ " + k.toString + " }"
   }
 
   def input(nsubj: Quote, nobj: Quote, cont: Proc): Input = Input(Action(nsubj,nobj),cont)
 
-  // | : P x P -> P
+  // | : P x P => P
   final case class Par(processes: List[Proc]) extends Proc {
     override def toString: String = {
       processes.map(p => p.toString).mkString(" | ")
@@ -228,7 +277,7 @@ object Proc {
 
   def parstar(xs: List[Proc]): Proc = {
     xs match {
-      case Nil => Zero()
+      case Nil => Zero
       case head :: tail => tail.foldLeft(head)((acc,proc) => par(acc,proc))
     }
   }
@@ -237,7 +286,7 @@ object Proc {
     def apply(seqProc: Proc*): Par = Par(seqProc.toList)
   }
 
-  // * : N -> P
+  // * : N => P
   final case class Drop(x: Quote) extends Proc {
     override def toString: String = "*" + x.toString
   }
@@ -255,4 +304,93 @@ object Proc {
       case Action(Quote(proc1),Quote(proc2)) => input(Quote(proc1),Quote(proc2),cont)
     }
   }
+
+  def matchIO(proc: Proc, procList: List[Proc]): (Option[Proc], List[Proc]) =
+    procList match {
+      case Nil => ( None, procList )
+      case hProc :: rProc =>
+        proc match {
+          case Zero        =>  ( None, procList )         //(* 0 has no match *)
+          case Drop( n )   =>  ( None, procList )         //(* Drop has no match *)
+          case Par( prox ) =>  ( None, procList )         //(* This could be extended pt-wise ... *)
+            
+          case Input( Action( insubj, inobj ), iproc ) => //(* Find a Lift( ... ) with matching subject *)
+            val ans: (List[Proc], List[Proc]) =
+              procList.partition {
+                case Output( onsubj, oproc ) => nameEquiv (insubj, onsubj)
+                case _ => false
+                }
+            ans match {
+              case ( List(), rProc ) => ( None, procList )
+              case ( mProc :: mrProc, rProc ) => ( Some( mProc ), mrProc ++ rProc )
+            }
+            
+          case Output( onsubj, oproc ) =>                   //(* Find an Input( ... ) with matching subject *)
+            val ans: (List[Proc], List[Proc]) =
+              procList.partition {
+                case Input( Action( insubj, inobj ), iproc ) => nameEquiv (insubj, onsubj)
+                case _ => false
+              }
+            ans match {
+              case ( List(), rProc ) => ( None, procList )
+              case ( mProc::mrProc, rProc ) => ( Some( mProc ), mrProc ++ rProc )
+            }
+        }
+    }
+
+  def normalizeOnce(proc: Proc): (Boolean, Proc) =
+    proc match {
+      case Zero => ( false, Zero )                                                    //(* stuck *)
+      case Input( act, proc ) => ( false, Input( act, proc ) )                        //(* stuck *)
+      case Output( nsubj, proc ) => ( false, Output( nsubj, proc ) )                      //(* stuck *)
+      case Drop( nsubj ) => ( false, Drop( nsubj ) )                                  //(* stuck *)
+
+      case Par( List() ) => ( false, Par( List() ) )                                          //(* stuck *)
+      case Par( List(Zero) ) => ( false, Par( List(Zero) ) )                                //(* stuck *)
+      case Par( List(Input( act, proc )) ) => ( false, Par( List(Input( act, proc )) ) )  //(* stuck *)
+      case Par( List(Output( nsubj, proc )) ) => (false, Par( List(Output( nsubj, proc )) ) )   //(* stuck *)
+      case Par( List(Drop( nsubj )) ) => ( false, Par( List(Drop( nsubj )) ) )              //(* stuck *)
+  
+      case Par( Par( hprox ) :: rProc ) => normalizeOnce( Par( (hprox ++ rProc) ) )       //(* mix *)
+      case Par( Zero :: rProc ) => normalizeOnce( Par( rProc ) )                         //(* structural equivalence *)
+      case Par( Drop( nsubj ) :: rProc ) =>                                           //(* mix *)
+        normalizeOnce( Par( rProc ++ List(Drop( nsubj )) ) )                         
+
+      case Par( Input( Action( insubj, inobj ), iproc ) :: rProc ) =>
+        val mProc: (Option[Proc], List[Proc]) = matchIO(Input( Action( insubj, inobj ), iproc ), rProc)
+        mProc match {
+          case ( None, nrProc ) =>                                                //(* mix *)
+            val mix = normalizeOnce( Par( rProc ) )
+            mix match {
+              case ( b, Par( prox ) ) =>
+                ( b, Par( Input( Action( insubj, inobj ), iproc ) :: prox ) )
+              case ( b, redproc ) => sys.error(s"Invalid reduction result: $redproc") //raise (InvalidReductionResult( redproc )) )
+              }
+          case ( Some( Output( onsubj, oproc ) ), nrProc ) =>                       //(* comm *)
+            val inputK = semanticSubstitution(iproc)(Quote( oproc ))(inobj)
+            ( true, Par(nrProc ++ List(inputK)) )
+          case ( Some( badMProc ), rmproc ) => sys.error(s"Invalid reduction result: $badMProc")//raise (InvalidMatchResult( badMProc )) )
+        }
+      case Par( Output( onsubj, oproc ) :: rProc ) =>
+        val mProc: (Option[Proc], List[Proc]) = matchIO (Output( onsubj, oproc ), rProc)
+        mProc match {
+          case ( None, nrProc ) =>                                                //(* mix *)
+            val mix = normalizeOnce( Par( rProc ) )
+            mix match {
+              case ( b, Par( prox ) ) =>
+                ( b, Par( Output( onsubj, oproc ) :: prox ) )
+              case ( b, redproc ) => sys.error(s"Invalid reduction result: $redproc")
+              }
+          case ( Some( Input( Action( insubj, inobj ), iproc ) ), nrProc ) =>     //(* comm *)
+            val inputK = semanticSubstitution (iproc) (Quote( oproc )) (inobj)
+            ( true, Par( nrProc ++ List(inputK ) ) ) 
+          case ( Some( badMProc ), rmproc ) => sys.error(s"Invalid match result: $badMProc")
+        }
+    }
+
+  def normalize(proc: Proc): Proc =
+    normalizeOnce(proc) match {
+      case (true, reduct) => normalize(reduct)
+      case (false, fixpt) => fixpt
+    }
 }
