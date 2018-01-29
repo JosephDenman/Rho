@@ -393,4 +393,15 @@ object Proc {
       case (true, reduct) => normalize(reduct)
       case (false, fixpt) => fixpt
     }
+
+  def application(x: Quote): Proc = {
+    val y = calcNextName(Zero)
+    input(x,y,Par(Output(x,Drop(y)), Drop(y)))
+  }
+
+  def repeat(p: Proc, x: Quote): Proc =
+    Par (
+      Output(x, Par( application(x), p )),
+      application(x)
+    )
 }

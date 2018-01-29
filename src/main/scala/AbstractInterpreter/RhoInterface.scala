@@ -142,7 +142,24 @@ object Example extends App {
           "\n" + "Terminated" + "\n"))
     }
   }
-  evaluate(reducible_6)
+
+  def application(x: Quote): Proc = {
+    val y = calcNextName(Zero)
+    input(x,y,Par(Output(x,Drop(y)), Drop(y)))
+  }
+
+  def repeat(p: Proc, x: Quote): Proc =
+    Par (
+      Output(x, Par( application(x), p )),
+      application(x)
+    )
+  
+  val reducible_repeat = repeat (
+    reducible_1,
+    Quote(reducible_2)
+    )
+
+  evaluate(reducible_repeat)
 
 }
 
