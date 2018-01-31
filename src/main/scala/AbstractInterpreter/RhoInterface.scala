@@ -1,7 +1,7 @@
 package AbstractInterpreter
 
 import ADT.Proc._
-import ADT.{Channel, Proc, Quote}
+import ADT.{Channel, Proc, Quote, Val}
 import Alias._
 import cats.implicits._
 
@@ -159,7 +159,15 @@ object Example extends App {
     Quote(reducible_2)
     )
 
-  evaluate(reducible_repeat)
+  val reducible_val = par (
+    Output(Quote(Zero), Val('7': Char)),
+    Input(
+      Action(Quote(Zero), calcNextName(reducible_6)),
+      Drop(calcNextName(reducible_6))
+    )
+  )
+
+  evaluate(reducible_val)
 
 }
 
@@ -302,6 +310,16 @@ object RhoInterface {
         case proc :: xs =>
           for {
             _ <- proc match {
+
+              case Val(v) =>
+                for {
+                  st <- Trace.get[MachineState, List[MachineState]]
+
+                  _ <- Trace.tell(List(st))
+
+                  _ <- putRunQueue(xs)
+
+                } yield ()
 
               // (Store, 0 :: R) -> (Store, R)
               case Zero =>

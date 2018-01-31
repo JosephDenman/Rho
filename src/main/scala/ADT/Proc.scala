@@ -19,9 +19,14 @@ case class Var(id: String) extends Channel {
 // Term constructors
 sealed trait Proc extends Serializable
 
+case class Val(getVal: AnyVal) extends Proc {
+  override def toString: String = getVal.toString
+}
+
 object Proc {
 
   def calcNextName: Proc => Quote = {
+    case Val(v) => Quote(Val(v))
     case Zero => Quote(Zero)
     case Drop(Quote(p)) => Quote(par(p, p))
     case Input(Action(Quote(psubj), Quote(pobj)), cont) => Quote(parstar(List(psubj, pobj, cont)))
@@ -33,6 +38,8 @@ object Proc {
   def syntacticSubstitution: Proc => Quote => Quote => Proc = { proc => nsource => ntarget =>
 
     proc match {
+
+      case Val(v) => Val(v)
 
       case Zero => Zero
 
@@ -89,6 +96,8 @@ object Proc {
   def semanticSubstitution: Proc => Quote => Quote => Proc = { proc => nsource => ntarget =>
 
     proc match {
+
+      case Val(v) => Val(v)
 
       case Zero => Zero
 
@@ -201,7 +210,8 @@ object Proc {
 
   def free(proc: Proc): Set[Quote] = {
     proc match {
-      case Zero                           => Set.empty[Quote]
+      case Val(v)                           => Set.empty[Quote]
+      case Zero                             => Set.empty[Quote]
       case Drop(n)                          => Set(n)
       case Input(Action(nsubj, nobj), cont) => free(cont) - nobj + nsubj
       case Output(nsubj, cont)              => free(cont) + nsubj
@@ -220,6 +230,7 @@ object Proc {
 
   def procQuoteDepth(proc: Proc): Int = {
     proc match {
+      case Val(v) => 0
       case Zero  => 0
       case Drop(n) => nameQuoteDepth(n)
       case Input(Action(nsubj, nobj), k) =>
@@ -310,6 +321,7 @@ object Proc {
       case Nil => ( None, procList )
       case hProc :: rProc =>
         proc match {
+          case Val(v)      =>  ( None, procList )
           case Zero        =>  ( None, procList )         //(* 0 has no match *)
           case Drop( n )   =>  ( None, procList )         //(* Drop has no match *)
           case Par( prox ) =>  ( None, procList )         //(* This could be extended pt-wise ... *)
