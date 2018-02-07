@@ -1,67 +1,62 @@
 package ADT
 
-import cats.{Applicative, Eval, Foldable, Functor, Traverse}
+trait Name extends Serializable
+
+  case class Quote(proc: Proc) extends Name
+
+  case class Var(id: String) extends Name
 
 // Term constructors
-trait Proc[+Chan] extends Serializable {
+trait Proc extends Serializable {
   override def toString: String
 }
 
   // 0 : 1 -> P
-  case class Zero[Chan]() extends Proc[Chan]{
+  case object Zero extends Proc{
     override def toString: String = "0"
   }
 
   // ! : N x P -> P
-  case class Output[Chan](x: Chan, q: Proc[Chan]) extends Proc[Chan]{
+  case class Output(x: Name, send: Send, q: Proc) extends Proc {
     override def toString: String = x.toString + "!(" + q.toString + ")"
   }
 
   // for : N x N x P -> P
-  case class Input[Chan](z: Chan, x: Chan, k: Proc[Chan]) extends Proc[Chan]{
-    override def toString: String = "for( " + z.toString + " <- " + x.toString + " ){ " + k.toString + " }"
+  case class Input(rec: Receipt, k: Proc) extends Proc{
+    override def toString: String =  rec.toString + "{ " + k.toString + " }"
   }
 
   // | : P x P -> P
-  case class Par[Chan](processes: Proc[Chan]* ) extends Proc[Chan]{
+  case class Par(processes: Proc* ) extends Proc{
     override def toString: String = { processes.map(p => p.toString).mkString(" | ") }
   }
 
   // * : N -> P
-  case class Drop[Chan](x: Chan) extends Proc[Chan]{
+  case class Drop(x: Name) extends Proc {
     override def toString: String = "*" + x.toString
   }
 
   // and the one we hold on faith - New : N x P -> P
-  case class New[Chan](x: Chan, p: Proc[Chan]) extends Proc[Chan] {
+  case class New(x: Var, p: Proc) extends Proc {
     override def toString: String = "new " + x + " in { " + p.toString + " }"
   }
 
+sealed trait Receipt extends Serializable
+
+  case class Bind(z: Name, x: Name) extends Receipt
 
 
-/*
- * The uninhabited type.
- */
-case class Void(z: Void)
+sealed trait Send extends Serializable
 
-object Void {
+  case object SendSingle extends Send
 
-  /*
-   * Logical reasoning of type 'ex contradictione sequitur quodlibet'
-   */
+  case object SendMultiple extends Send
 
-  def absurd[A](z: Void): A = absurd(z)
 
-  def vacuous[F[_], A](fa: F[Void], z: Void)(implicit F: Functor[F]): F[A] = F.map(fa)(absurd(z))
-
-  // implicit def voidSemiGroup: Semigroup[Void] = new Semigroup[Void] {
-  //   def append(f1: Void, f2: => Void) = f2 //right biased
-  // }
-}
 
 object Proc {
 
-  implicit val functorProc: Functor[Proc] = new Functor[Proc] {
+  /*implicit val functorProc: Functor[Proc] = new Functor[Proc] {
     def map[A, B](proc: Proc[A])(func: A => B): Proc[B] =
       proc match {
         case Zero() => Zero()
@@ -108,7 +103,7 @@ object Proc {
 
     def foldRight[A, B](proc: Proc[A], lb: Eval[B])(f: (A, Eval[B]) => Eval[B]): Eval[B] =
       foldableProc.foldRight(proc, lb)(f)
-  }
+  } */
 }
 
 

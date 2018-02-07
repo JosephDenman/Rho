@@ -56,18 +56,18 @@ object RhoInterface {
        * the store as a hashmap and use the state monad to thread the store through the evaluation.
        */
 
-      val send: IOAddr => Val[IOAddr] => Task[Unit] = {
+      val send: IOAddr => Name => Task[Unit] = {
         ioAddr =>
           value =>
-            ioAddr.lookup.put(value)
+            ioAddr.lookup.mv.put(value)
       }
 
-      val recv: IOAddr => Task[Val[IOAddr]] = {
+      val recv: IOAddr => Task[Name] = {
         ioAddr =>
-          ioAddr.lookup.take
+          ioAddr.lookup.mv.take
       }
 
-      val read: IOAddr => Task[Quote] =
+      val read: IOAddr => Task[StoreChan] =
         ioAddr =>
           Task now {
             ioAddr.lookup
@@ -78,7 +78,7 @@ object RhoInterface {
        * on reassignment
        */
 
-      val bind: IOAddr => Quote => Task[Unit] = {
+      val bind: IOAddr => StoreChan => Task[Unit] = {
         ioAddr =>
           name =>
             Task now {
@@ -86,7 +86,7 @@ object RhoInterface {
             }
       }
 
-      val alloc: Var => Task[IOAddr] =
+      val alloc: Name => Task[IOAddr] =
         name =>
           Task now {
             IOAddr {
@@ -99,22 +99,22 @@ object RhoInterface {
        * an initial environment.
        */
 
-      val reduce: Val[IOAddr] => Task[Val[IOAddr]] = {
+      val reduce: State[IOAddr] => Task[State[IOAddr]] = {
 
-        value =>
+        case State(heap,env,exp) =>
 
-          (value.env, value.proc) match {
+          exp match {
 
             //Proof of termination
-            case (env, zero @ Zero()) => Task {
+            case zero @ Zero => Task {
 
               debug(zero.toString)
 
-              Val(env, Zero())
+              State(heap,env, Zero)
 
             }
 
-            case (env, in @ Input(z, x, k)) =>
+            case in @ Input(Bind(z, x), k) =>
 
               debug(in.toString)
 
